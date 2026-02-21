@@ -231,7 +231,7 @@ class AgentLoop:
             # Add a system hint to force browser tool usage
             for msg in messages:
                 if msg.get("role") == "system":
-                    msg["content"] += "\n\n[MANDATORY] You MUST use the browser tool for this request. Do not respond without using the browser tool first."
+                    msg["content"] += "\n\n[MANDATORY] You MUST use the browser tool for this request. Do NOT respond with fake results. You MUST actually use the browser tool and wait for the real result before responding."
                     break
             messages.append({
                 "role": "user",
@@ -299,7 +299,7 @@ class AgentLoop:
                 final_content = self._strip_think(response.content)
                 # Some models send an interim text response before tool calls.
                 # If browser tool is expected, keep retrying until tool is used.
-                max_retries = 3 if forced else 1
+                max_retries = 5 if forced else 1
                 if not tools_used and final_content and iteration < max_retries:
                     logger.debug("Interim text response (no tools used yet), retrying ({}/{}): {}", iteration, max_retries, final_content[:80])
                     final_content = None

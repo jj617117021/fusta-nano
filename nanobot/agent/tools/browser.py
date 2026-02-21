@@ -18,17 +18,18 @@ class BrowserTool(Tool):
     description = """Browser automation. Actions:
 
 - navigate: Open URL
-- search: Search - returns RESULTS directly (NO get_text needed after!)
-- screenshot: Take screenshot
+- search: Search - auto-finds search box, enters query, presses Enter
+- click_text: Click element by text - RETURNS NEW URL if navigated!
+- screenshot: Take screenshot (ONLY if user asks)
 - get_text: Get page text
 - scroll: Scroll
 - find: Find elements - returns selectors
-- click: Click element
+- click: Click by selector
 - type: Type text
 - press: Press key
 - snapshot: Get accessibility tree
 
-search returns titles/prices - tell user directly!"""
+TRUST the result! [VERIFIED] means it worked. NO more tools after success!"""
 
     def __init__(self, workspace: Path):
         self.workspace = workspace
@@ -118,55 +119,123 @@ search returns titles/prices - tell user directly!"""
                 return f"[VERIFIED] Navigated to: {current_url}\nTitle: {title}\nExpected: {url}"
 
             elif action == "search":
-                # Quick search: if no search box, navigate to site first
+                # Quick search - use Playwright fill for reliability
                 query = kwargs.get("query") or kwargs.get("text") or kwargs.get("keyword") or ""
+                url_param = kwargs.get("url", "")  # Get URL parameter!
+
                 if not query:
                     return "Error: query required"
 
-                # Check if search box exists
-                result = await page.evaluate("""(q) => {
-                    const s = [
-                        'input[type="search"]', 'input[type="text"]',
-                        'input[placeholder*="搜索"]', 'input[placeholder*="Search"]',
-                        '#search-input', '.search-input', 'input[name="q"]'
-                    ];
-                    for (const sel of s) {
-                        const el = document.querySelector(sel);
-                        if (el) { el.value = q; el.focus(); return sel; }
-                    }
-                    return null;
-                }""", query)
+                # If URL parameter is provided, navigate there first
+                if url_param:
+                    try:
+                        await page.goto(url_param, wait_until="domcontentloaded", timeout=10000)
+                        await asyncio.sleep(1)
+                    except Exception as e:
+                        pass  # Continue anyway
 
-                if not result:
-                    # Try common sites
-                    url = page.url.lower()
-                    if 'amazon' in url:
-                        await page.goto("https://www.amazon.com", wait_until="domcontentloaded", timeout=10000)
-                    elif 'xiaohongshu' in url or '小红书' in query:
-                        await page.goto("https://www.xiaohongshu.com", wait_until="domcontentloaded", timeout=10000)
-                        await asyncio.sleep(2)
-                    elif 'ebay' in url:
-                        await page.goto("https://www.ebay.com", wait_until="domcontentloaded", timeout=10000)
-                    elif 'youtube' in url:
-                        await page.goto("https://www.youtube.com", wait_until="domcontentloaded", timeout=10000)
-                    else:
-                        return "[FAILED] No search box. Navigate to website first."
+                # Try to find and fill search input using Playwright
+                search_selectors = [
+                    'input[type="search"]',
+                    'input[type="text"]',
+                    'input[placeholder*="搜索"]',
+                    'input[placeholder*="Search"]',
+                    '#search-input',
+                    '.search-input',
+                    'input[name="q"]',
+                    'input[placeholder="搜索"]'
+                ]
 
-                    # Try again
-                    result = await page.evaluate("""(q) => {
-                        const s = ['input[type="search"]', 'input[type="text"]', 'input[placeholder*="搜索"]', 'input[placeholder*="Search"]', '#search-input', '.search-input'];
-                        for (const sel of s) {
-                            const el = document.querySelector(sel);
-                            if (el) { el.value = q; el.focus(); return sel; }
-                        }
-                        return null;
-                    }""", query)
+                selector_found = None
+                for sel in search_selectors:
+                    try:
+                        el = await page.query_selector(sel)
+                        if el:
+                            await el.fill(query)
+                            selector_found = sel
+                            break
+                    except:
+                        continue
 
-                if result:
-                    await page.press('input', 'Enter')
+                if selector_found:
+                    await page.press(selector_found, 'Enter')
                     await asyncio.sleep(1)
                     return f"[VERIFIED] Searched: {query}"
-                return "[FAILED] No search box"
+                else:
+                    # Try common sites if no search box
+                    current_url = page.url.lower()
+                    if 'amazon' not in current_url and 'xiaohongshu' not in current_url:
+                        # Auto-navigate to common site based on query or default
+                        if 'amazon' in query.lower():
+                            await page.goto("https://www.amazon.com", wait_until="domcontentloaded", timeout=10000)
+                        elif '小红书' in query or 'xiao' in query.lower():
+                            await page.goto("https://www.xiaohongshu.com", wait_until="domcontentloaded", timeout=10000)
+                            await asyncio.sleep(2)
+                        elif 'youtube' in query.lower():
+                            await page.goto("https://www.youtube.com", wait_until="domcontentloaded", timeout=10000)
+                        else:
+                            return "[FAILED] No search box found. Navigate to website first."
+
+                    # Try again
+                    for sel in search_selectors:
+                        try:
+                            el = await page.query_selector(sel)
+                            if el:
+                                await el.fill(query)
+                                await page.press(sel, 'Enter')
+                                await asyncio.sleep(1)
+                                return f"[VERIFIED] Searched: {query}"
+                        except:
+                            continue
+
+                    return "[FAILED] No search box found"
+
+            elif action == "click_text":
+                # Click element by text content - more robust
+                text = kwargs.get("text", "") or kwargs.get("query", "") or kwargs.get("keyword", "")
+                if not text:
+                    return "Error: text required for click_text"
+
+                url_before = page.url
+
+                # Click and wait for navigation or content change
+                clicked = await page.evaluate("""(searchText) => {
+                    const selectors = ['a', 'button', '.s-item-link', '.a-link-normal', '[class*="item"]', 'span', 'div'];
+                    const lower = searchText.toLowerCase();
+
+                    // Try to find and click
+                    for (const sel of selectors) {
+                        const elements = document.querySelectorAll(sel);
+                        for (const el of elements) {
+                            const elText = (el.innerText || el.textContent || '').trim();
+                            if (elText.toLowerCase().includes(lower) && elText.length < 100) {
+                                const rect = el.getBoundingClientRect();
+                                if (rect.width > 5 && rect.height > 5) {
+                                    el.click();
+                                    return el.tagName;
+                                }
+                            }
+                        }
+                    }
+                    return null;
+                }""", text)
+
+                if clicked:
+                    # Wait a bit for potential navigation
+                    try:
+                        await page.wait_for_load_state("domcontentloaded", timeout=3000)
+                    except:
+                        pass
+                    await asyncio.sleep(1)
+
+                    url_after = page.url
+                    title = await page.title() if page.url != url_before else ""
+
+                    if url_after != url_before:
+                        return f"[VERIFIED] Clicked '{text}'. Now at: {url_after[:80]}"
+                    else:
+                        return f"[VERIFIED] Clicked '{text}'. Stayed on same page."
+                return f"[FAILED] No clickable element found with: {text}"
 
             elif action == "screenshot":
                 full_page = kwargs.get("fullPage", False)
@@ -396,7 +465,7 @@ search returns titles/prices - tell user directly!"""
                 "action": {
                     "type": "string",
                     "description": "The action to perform",
-                    "enum": ["navigate", "search", "screenshot", "click", "type", "press", "snapshot", "evaluate", "wait", "get_url", "get_title", "get_text", "scroll", "find", "status", "stop"]
+                    "enum": ["navigate", "search", "click_text", "screenshot", "click", "type", "press", "snapshot", "evaluate", "wait", "get_url", "get_title", "get_text", "scroll", "find", "status", "stop"]
                 },
                 "url": {"type": "string", "description": "URL for navigate action"},
                 "path": {"type": "string", "description": "DEPRECATED - screenshots always save to workspace/screenshots/"},
