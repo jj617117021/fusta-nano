@@ -1,10 +1,13 @@
 """Context builder for assembling agent prompts."""
 
 import base64
+import io
 import mimetypes
 import platform
 from pathlib import Path
 from typing import Any
+
+from PIL import Image
 
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.skills import SkillsLoader
@@ -13,17 +16,20 @@ from nanobot.agent.skills import SkillsLoader
 class ContextBuilder:
     """
     Builds the context (system prompt + messages) for the agent.
-    
+
     Assembles bootstrap files, memory, skills, and conversation history
     into a coherent prompt for the LLM.
     """
-    
+
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md"]
-    
-    def __init__(self, workspace: Path):
+
+    def __init__(self, workspace: Path, media_config: "MediaConfig | None" = None, vision_api_key: str = ""):
+        from nanobot.config.schema import MediaConfig
         self.workspace = workspace
         self.memory = MemoryStore(workspace)
         self.skills = SkillsLoader(workspace)
+        self.media_config = media_config or MediaConfig()
+        self.vision_api_key = vision_api_key  # API key for vision model
     
     def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
         """
@@ -121,7 +127,7 @@ To recall past events, grep {workspace_path}/memory/HISTORY.md"""
         
         return "\n\n".join(parts) if parts else ""
     
-    def build_messages(
+    async def build_messages(
         self,
         history: list[dict[str, Any]],
         current_message: str,
@@ -155,29 +161,187 @@ To recall past events, grep {workspace_path}/memory/HISTORY.md"""
         # History
         messages.extend(history)
 
-        # Current message (with optional image attachments)
-        user_content = self._build_user_content(current_message, media)
+        # Current message (with optional image attachments and understanding)
+        user_content = await self._build_user_content_async(current_message, media)
         messages.append({"role": "user", "content": user_content})
 
         return messages
 
-    def _build_user_content(self, text: str, media: list[str] | None) -> str | list[dict[str, Any]]:
-        """Build user message content with optional base64-encoded images."""
+    async def _build_user_content_async(self, text: str, media: list[str] | None) -> str | list[dict[str, Any]]:
+        """Build user message content with optional images and AI understanding.
+
+        If image understanding is enabled, describes each image using a vision model
+        and includes the description in the message.
+        """
         if not media:
             return text
-        
+
+        # Check if we need image understanding
+        use_understanding = (
+            self.media_config.image.understanding
+            and self.vision_provider
+        )
+
+        descriptions = []
+        if use_understanding:
+            for path in media:
+                p = Path(path)
+                if p.is_file():
+                    desc = await self.describe_image(p)
+                    if desc:
+                        descriptions.append(desc)
+
+        # Build images list
         images = []
         for path in media:
             p = Path(path)
             mime, _ = mimetypes.guess_type(path)
             if not p.is_file() or not mime or not mime.startswith("image/"):
                 continue
-            b64 = base64.b64encode(p.read_bytes()).decode()
+
+            # Process image if media processing is enabled
+            if self.media_config.image.enabled:
+                processed_data = self._process_image(p)
+            else:
+                processed_data = p.read_bytes()
+                mime = "image/jpeg"
+
+            b64 = base64.b64encode(processed_data).decode()
             images.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
-        
+
+        # Build content
+        content_parts = []
+
+        # Add image descriptions if available
+        if descriptions:
+            content_parts.append("[Image Descriptions]\n" + "\n\n".join(f"- {d}" for d in descriptions))
+
+        # Add images
+        if images:
+            content_parts.extend(images)
+
+        # Add original text
+        content_parts.append({"type": "text", "text": text})
+
+        if not content_parts:
+            return text
+        return content_parts
+
+    def _build_user_content(self, text: str, media: list[str] | None) -> str | list[dict[str, Any]]:
+        """Build user message content with optional base64-encoded images.
+
+        Images are processed (resized, compressed) before encoding if media processing is enabled.
+        """
+        if not media:
+            return text
+
+        images = []
+        for path in media:
+            p = Path(path)
+            mime, _ = mimetypes.guess_type(path)
+            if not p.is_file() or not mime or not mime.startswith("image/"):
+                continue
+
+            # Process image if media processing is enabled
+            if self.media_config.image.enabled:
+                processed_data = self._process_image(p)
+            else:
+                processed_data = p.read_bytes()
+                mime = "image/jpeg"  # Default to jpeg for processed images
+
+            b64 = base64.b64encode(processed_data).decode()
+            images.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
+
         if not images:
             return text
         return images + [{"type": "text", "text": text}]
+
+    def _process_image(self, path: Path) -> tuple[bytes, str]:
+        """Process image: resize, compress, and limit file size.
+
+        Returns:
+            Tuple of (processed_bytes, mime_type)
+        """
+        img = Image.open(path)
+        config = self.media_config.image
+
+        # Convert to RGB if necessary (handles RGBA, palette, etc.)
+        if img.mode not in ("RGB", "L"):  # L is grayscale
+            img = img.convert("RGB")
+
+        # Resize if larger than max_size (maintaining aspect ratio)
+        max_dim = config.max_size
+        if img.width > max_dim or img.height > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+
+        # Compress to JPEG with quality setting
+        output = io.BytesIO()
+        img.save(output, format="JPEG", quality=config.quality, optimize=True)
+        data = output.getvalue()
+
+        # Further compress if still over max_bytes
+        if len(data) > config.max_bytes:
+            # Reduce quality until under limit
+            quality = config.quality
+            while quality > 10 and len(data) > config.max_bytes:
+                output = io.BytesIO()
+                img.save(output, format="JPEG", quality=quality, optimize=True)
+                data = output.getvalue()
+                quality -= 10
+
+        return data, "image/jpeg"
+
+    async def describe_image(self, image_path: Path) -> str | None:
+        """Describe an image using MiniMax VLM API.
+
+        Args:
+            image_path: Path to the image file.
+
+        Returns:
+            Description of the image, or None if description fails.
+        """
+        if not self.media_config.image.understanding:
+            return None
+
+        if not self.vision_api_key:
+            return None
+
+        try:
+            # Process image first
+            processed_data, mime = self._process_image(image_path)
+            b64 = base64.b64encode(processed_data).decode()
+
+            # Call MiniMax VLM API directly (like OpenCLAW does)
+            import httpx
+            url = "https://api.minimax.io/v1/coding_plan/vlm"
+
+            headers = {
+                "Authorization": f"Bearer {self.vision_api_key}",
+                "Content-Type": "application/json",
+                "MM-API-Source": "nanobot"
+            }
+
+            payload = {
+                "prompt": "Describe this image in detail. Focus on: objects, people, text, colors, setting, and any notable features.",
+                "image_url": f"data:{mime};base64,{b64}"
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, headers=headers, timeout=30.0)
+                response.raise_for_status()
+                result = response.json()
+
+            # Extract content from response
+            content = result.get("content", "")
+            if content:
+                return content
+            return None
+        except Exception as e:
+            # Log error but don't fail - just return None
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to describe image: {e}")
+            return None
+            return None
     
     def add_tool_result(
         self,

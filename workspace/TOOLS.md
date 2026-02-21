@@ -63,6 +63,57 @@ web_fetch(url: str, extractMode: str = "markdown", maxChars: int = 50000) -> str
 - Supports markdown or plain text extraction
 - Output is truncated at 50,000 characters by default
 
+## Browser Automation
+
+### browser
+Control a headless browser for web automation. Use this tool to browse the web, take screenshots, and interact with web pages.
+```
+browser(action: str, url: str = "", path: str = "", selector: str = "", text: str = "") -> str
+```
+
+**Actions:**
+- `navigate` or `open` - Open a URL (requires `url` parameter)
+- `screenshot` - Take a screenshot (optional `path` to save, defaults to workspace)
+- `click` - Click an element by CSS selector (requires `selector`)
+- `type` - Type text into an element (requires `selector` and `text`)
+- `press` - Press a keyboard key (requires `key`)
+- `snapshot` or `aria` - Get accessibility tree of the page
+- `evaluate` or `eval` - Execute JavaScript (requires `script`)
+- `wait` - Wait for selector or URL (optional `selector`, `url`, `timeout`)
+- `get_url` - Get current URL
+- `get_title` - Get page title
+- `status` - Check if browser is running
+- `stop` or `close` - Close the browser
+
+**Examples:**
+```
+browser(action="navigate", url="https://example.com")
+browser(action="screenshot", path="~/Desktop/screenshot.png")
+browser(action="click", selector="#submit-button")
+browser(action="type", selector="input[name=q]", text="hello")
+browser(action="snapshot")
+```
+
+## Image Understanding
+
+### image
+Analyze an image with the configured image model. Uses MiniMax VLM for image understanding.
+```
+image(arg: str) -> str
+```
+
+**Examples:**
+```
+image("path/to/image.png")
+image("path/to/image.png What is in this image?")
+```
+
+**Notes:**
+- Provide the path to an image file (PNG, JPEG, etc.)
+- Optionally ask a specific question about the image
+- Uses Gemini vision model to analyze the image
+- The image is automatically resized and compressed for optimal processing
+
 ## Communication
 
 ### message

@@ -22,6 +22,8 @@ from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
+from nanobot.agent.tools.image import ImageUnderstandTool
+from nanobot.agent.tools.browser import BrowserTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider
@@ -60,8 +62,10 @@ class AgentLoop:
         restrict_to_workspace: bool = False,
         session_manager: SessionManager | None = None,
         mcp_servers: dict | None = None,
+        media_config: "MediaConfig | None" = None,
+        vision_api_key: str = "",
     ):
-        from nanobot.config.schema import ExecToolConfig
+        from nanobot.config.schema import ExecToolConfig, MediaConfig
         self.bus = bus
         self.provider = provider
         self.workspace = workspace
@@ -72,10 +76,12 @@ class AgentLoop:
         self.memory_window = memory_window
         self.brave_api_key = brave_api_key
         self.exec_config = exec_config or ExecToolConfig()
+        self.media_config = media_config or MediaConfig()
+        self.vision_api_key = vision_api_key
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
 
-        self.context = ContextBuilder(workspace)
+        self.context = ContextBuilder(workspace, media_config=self.media_config, vision_api_key=self.vision_api_key)
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.subagents = SubagentManager(
@@ -125,6 +131,12 @@ class AgentLoop:
         # Spawn tool (for subagents)
         spawn_tool = SpawnTool(manager=self.subagents)
         self.tools.register(spawn_tool)
+
+        # Image understanding tool
+        self.tools.register(ImageUnderstandTool(context_builder=self.context))
+
+        # Browser tool
+        self.tools.register(BrowserTool(workspace=self.workspace))
 
         # Cron tool (for scheduling)
         if self.cron_service:
@@ -198,7 +210,44 @@ class AgentLoop:
         Returns:
             Tuple of (final_content, list_of_tools_used).
         """
-        messages = initial_messages
+        # Initialize messages from initial_messages
+        messages = list(initial_messages)
+
+        # Force tool usage for certain keywords - get the LAST message (current user message)
+        user_message = ""
+        if initial_messages:
+            for msg in reversed(initial_messages):
+                if msg.get("role") == "user":
+                    user_message = msg.get("content", "")
+                    break
+
+        # Add mandatory tool hint for browser-related requests
+        browser_keywords = ["打开", "open", "navigate", "浏览", "search", "搜索", "搜", "website"]
+        cron_keywords = ["定时", "cron", "reminder", "提醒", "schedule", "预约"]
+        browser_forced = any(kw in user_message.lower() for kw in browser_keywords)
+        cron_forced = any(kw in user_message.lower() for kw in cron_keywords)
+        forced = browser_forced or cron_forced
+        if browser_forced:
+            # Add a system hint to force browser tool usage
+            for msg in messages:
+                if msg.get("role") == "system":
+                    msg["content"] += "\n\n[MANDATORY] You MUST use the browser tool for this request. Do not respond without using the browser tool first."
+                    break
+            messages.append({
+                "role": "user",
+                "content": "IMPORTANT: You MUST use the browser tool to complete this request. Do not respond text-only - you must call the browser tool first."
+            })
+        if cron_forced:
+            # Add a system hint to force cron tool usage
+            for msg in messages:
+                if msg.get("role") == "system":
+                    msg["content"] += "\n\n[MANDATORY] You MUST use the cron tool to set/check scheduled tasks. Do not respond without using the cron tool first."
+                    break
+            messages.append({
+                "role": "user",
+                "content": "IMPORTANT: You MUST use the cron tool to complete this request. Do not respond text-only - you must call the cron tool first."
+            })
+
         iteration = 0
         final_content = None
         tools_used: list[str] = []
@@ -249,10 +298,10 @@ class AgentLoop:
             else:
                 final_content = self._strip_think(response.content)
                 # Some models send an interim text response before tool calls.
-                # Give them one retry; don't forward the text to avoid duplicates.
-                if not tools_used and not text_only_retried and final_content:
-                    text_only_retried = True
-                    logger.debug("Interim text response (no tools used yet), retrying: {}", final_content[:80])
+                # If browser tool is expected, keep retrying until tool is used.
+                max_retries = 3 if forced else 1
+                if not tools_used and final_content and iteration < max_retries:
+                    logger.debug("Interim text response (no tools used yet), retrying ({}/{}): {}", iteration, max_retries, final_content[:80])
                     final_content = None
                     continue
                 break
@@ -364,7 +413,7 @@ class AgentLoop:
             if isinstance(message_tool, MessageTool):
                 message_tool.start_turn()
 
-        initial_messages = self.context.build_messages(
+        initial_messages = await self.context.build_messages(
             history=session.get_history(max_messages=self.memory_window),
             current_message=msg.content,
             media=msg.media if msg.media else None,
@@ -428,7 +477,7 @@ class AgentLoop:
         session_key = f"{origin_channel}:{origin_chat_id}"
         session = self.sessions.get_or_create(session_key)
         self._set_tool_context(origin_channel, origin_chat_id, msg.metadata.get("message_id"))
-        initial_messages = self.context.build_messages(
+        initial_messages = await self.context.build_messages(
             history=session.get_history(max_messages=self.memory_window),
             current_message=msg.content,
             channel=origin_channel,

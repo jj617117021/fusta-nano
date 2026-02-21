@@ -234,6 +234,20 @@ class DiscordChannel(BaseChannel):
         if not self.is_allowed(sender_id):
             return
 
+        # Check channel allow list based on guild
+        guild_id = str(payload.get("guild_id", ""))
+
+        # Check global channels list first
+        if hasattr(self.config, 'channels') and self.config.channels:
+            if channel_id not in self.config.channels:
+                return
+
+        # Check guild-specific allowlist
+        if guild_id and hasattr(self.config, 'channel_allowlist') and self.config.channel_allowlist:
+            allowed_channels = self.config.channel_allowlist.get(guild_id, [])
+            if allowed_channels and channel_id not in allowed_channels:
+                return
+
         content_parts = [content] if content else []
         media_paths: list[str] = []
         media_dir = Path.home() / ".nanobot" / "media"

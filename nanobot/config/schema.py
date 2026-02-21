@@ -57,6 +57,9 @@ class DiscordConfig(Base):
     enabled: bool = False
     token: str = ""  # Bot token from Discord Developer Portal
     allow_from: list[str] = Field(default_factory=list)  # Allowed user IDs
+    channels: list[str] = Field(default_factory=list)  # Allowed channel IDs (if empty, allows all)
+    group_policy: str = "mention"  # "mention", "open", "allowlist"
+    channel_allowlist: dict[str, list[str]] = Field(default_factory=dict)  # {guild_id: [channel_ids]}
     gateway_url: str = "wss://gateway.discord.gg/?v=10&encoding=json"
     intents: int = 37377  # GUILDS + GUILD_MESSAGES + DIRECT_MESSAGES + MESSAGE_CONTENT
 
@@ -186,7 +189,7 @@ class AgentDefaults(Base):
     model: str = "anthropic/claude-opus-4-5"
     max_tokens: int = 8192
     temperature: float = 0.7
-    max_tool_iterations: int = 20
+    max_tool_iterations: int = 40
     memory_window: int = 50
 
 
@@ -246,6 +249,24 @@ class WebToolsConfig(Base):
     search: WebSearchConfig = Field(default_factory=WebSearchConfig)
 
 
+class MediaImageConfig(Base):
+    """Image media processing configuration."""
+
+    enabled: bool = True  # Enable image processing
+    max_size: int = 1200  # Max dimension (width or height) in pixels (Openclaw default)
+    quality: int = 85  # JPEG quality (1-100)
+    max_bytes: int = 5 * 1024 * 1024  # Max file size (default 5MB)
+    understanding: bool = True  # Enable AI image understanding (describe images before LLM)
+    vision_model: str = ""  # Model to use for image understanding (falls back to main model if empty)
+    vision_provider: str = ""  # Provider for vision model (falls back to main provider if empty)
+
+
+class MediaConfig(Base):
+    """Media processing configuration."""
+
+    image: MediaImageConfig = Field(default_factory=MediaImageConfig)
+
+
 class ExecToolConfig(Base):
     """Shell exec tool configuration."""
 
@@ -266,6 +287,7 @@ class ToolsConfig(Base):
     """Tools configuration."""
 
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
+    media: MediaConfig = Field(default_factory=MediaConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
