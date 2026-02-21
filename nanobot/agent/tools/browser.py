@@ -15,29 +15,20 @@ class BrowserTool(Tool):
     """Browser automation tool - control a headless browser for web automation."""
 
     name = "browser"
-    description = """Control a headless browser for web automation. Use this tool to:
-- Open URLs and navigate the web
-- Take screenshots of pages
-- Click, type, and interact with web elements
-- Get accessibility snapshots of pages
+    description = """Browser automation. Actions:
 
-IMPORTANT: Always VERIFY your actions worked by checking the result.
-- After navigate: check the returned URL matches what you expected
-- After type: verify the text appears on page
-- After click: verify the action had an effect
+- navigate: Open URL
+- search: Search - returns RESULTS directly (NO get_text needed after!)
+- screenshot: Take screenshot
+- get_text: Get page text
+- scroll: Scroll
+- find: Find elements - returns selectors
+- click: Click element
+- type: Type text
+- press: Press key
+- snapshot: Get accessibility tree
 
-Actions:
-- navigate: Open a URL, returns current URL and title
-- screenshot: Take a screenshot, saves to workspace/screenshots/ with timestamp
-- get_text: Get visible text from page
-- scroll: Scroll the page (direction: up/down, amount: pixels)
-- find: Find elements by text/placeholder/button - returns matching selectors
-- click: Click an element by selector, returns success/failure
-- type: Type text into an element, returns success/failure
-- press: Press a keyboard key
-- snapshot: Get accessibility tree of the page
-- evaluate: Execute JavaScript
-- wait: Wait for conditions"""
+search returns titles/prices - tell user directly!"""
 
     def __init__(self, workspace: Path):
         self.workspace = workspace
@@ -125,6 +116,57 @@ Actions:
                 current_url = page.url
                 title = await page.title()
                 return f"[VERIFIED] Navigated to: {current_url}\nTitle: {title}\nExpected: {url}"
+
+            elif action == "search":
+                # Quick search: if no search box, navigate to site first
+                query = kwargs.get("query") or kwargs.get("text") or kwargs.get("keyword") or ""
+                if not query:
+                    return "Error: query required"
+
+                # Check if search box exists
+                result = await page.evaluate("""(q) => {
+                    const s = [
+                        'input[type="search"]', 'input[type="text"]',
+                        'input[placeholder*="搜索"]', 'input[placeholder*="Search"]',
+                        '#search-input', '.search-input', 'input[name="q"]'
+                    ];
+                    for (const sel of s) {
+                        const el = document.querySelector(sel);
+                        if (el) { el.value = q; el.focus(); return sel; }
+                    }
+                    return null;
+                }""", query)
+
+                if not result:
+                    # Try common sites
+                    url = page.url.lower()
+                    if 'amazon' in url:
+                        await page.goto("https://www.amazon.com", wait_until="domcontentloaded", timeout=10000)
+                    elif 'xiaohongshu' in url or '小红书' in query:
+                        await page.goto("https://www.xiaohongshu.com", wait_until="domcontentloaded", timeout=10000)
+                        await asyncio.sleep(2)
+                    elif 'ebay' in url:
+                        await page.goto("https://www.ebay.com", wait_until="domcontentloaded", timeout=10000)
+                    elif 'youtube' in url:
+                        await page.goto("https://www.youtube.com", wait_until="domcontentloaded", timeout=10000)
+                    else:
+                        return "[FAILED] No search box. Navigate to website first."
+
+                    # Try again
+                    result = await page.evaluate("""(q) => {
+                        const s = ['input[type="search"]', 'input[type="text"]', 'input[placeholder*="搜索"]', 'input[placeholder*="Search"]', '#search-input', '.search-input'];
+                        for (const sel of s) {
+                            const el = document.querySelector(sel);
+                            if (el) { el.value = q; el.focus(); return sel; }
+                        }
+                        return null;
+                    }""", query)
+
+                if result:
+                    await page.press('input', 'Enter')
+                    await asyncio.sleep(1)
+                    return f"[VERIFIED] Searched: {query}"
+                return "[FAILED] No search box"
 
             elif action == "screenshot":
                 full_page = kwargs.get("fullPage", False)
@@ -354,7 +396,7 @@ Actions:
                 "action": {
                     "type": "string",
                     "description": "The action to perform",
-                    "enum": ["navigate", "screenshot", "click", "type", "press", "snapshot", "evaluate", "wait", "get_url", "get_title", "get_text", "scroll", "find", "status", "stop"]
+                    "enum": ["navigate", "search", "screenshot", "click", "type", "press", "snapshot", "evaluate", "wait", "get_url", "get_title", "get_text", "scroll", "find", "status", "stop"]
                 },
                 "url": {"type": "string", "description": "URL for navigate action"},
                 "path": {"type": "string", "description": "DEPRECATED - screenshots always save to workspace/screenshots/"},
