@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="nanobot_logo.png" alt="fusta-nano" width="500">
+  <img src="fusta.png" alt="fusta-nano" width="500">
   <h1>fusta-nano: Lightweight Personal AI Assistant</h1>
   <p>
     <a href="https://pypi.org/project/nanobot-ai/"><img src="https://img.shields.io/pypi/v/nanobot-ai" alt="PyPI"></a>
