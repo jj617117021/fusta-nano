@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -22,6 +23,7 @@ from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
+from nanobot.agent.tools.tavily import TavilySearchTool
 from nanobot.agent.tools.image import ImageUnderstandTool
 from nanobot.agent.tools.browser import BrowserTool
 from nanobot.agent.tools.session import SessionTool
@@ -58,6 +60,7 @@ class AgentLoop:
         max_tokens: int = 4096,
         memory_window: int = 50,
         brave_api_key: str | None = None,
+        tavily_api_key: str | None = None,
         exec_config: ExecToolConfig | None = None,
         cron_service: CronService | None = None,
         restrict_to_workspace: bool = False,
@@ -76,6 +79,7 @@ class AgentLoop:
         self.max_tokens = max_tokens
         self.memory_window = memory_window
         self.brave_api_key = brave_api_key
+        self.tavily_api_key = tavily_api_key
         self.exec_config = exec_config or ExecToolConfig()
         self.media_config = media_config or MediaConfig()
         self.vision_api_key = vision_api_key
@@ -123,6 +127,7 @@ class AgentLoop:
 
         # Web tools
         self.tools.register(WebSearchTool(api_key=self.brave_api_key))
+        self.tools.register(TavilySearchTool(api_key=self.tavily_api_key or os.environ.get("TAVILY_API_KEY")))
         self.tools.register(WebFetchTool())
 
         # Message tool
