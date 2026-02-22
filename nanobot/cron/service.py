@@ -283,6 +283,9 @@ class CronService:
         channel: str | None = None,
         to: str | None = None,
         delete_after_run: bool = False,
+        session_target: str = "current",
+        thinking: str | None = None,
+        model: str | None = None,
     ) -> CronJob:
         """Add a new job."""
         store = self._load_store()
@@ -305,6 +308,9 @@ class CronService:
             created_at_ms=now,
             updated_at_ms=now,
             delete_after_run=delete_after_run,
+            session_target=session_target,
+            thinking=thinking,
+            model=model,
         )
         
         store.jobs.append(job)

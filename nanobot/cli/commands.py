@@ -375,9 +375,22 @@ def gateway(
     # Set cron callback (needs agent)
     async def on_cron_job(job: CronJob) -> str | None:
         """Execute a cron job through the agent."""
+        import uuid
+
+        # Determine session key based on session_target
+        if job.session_target == "isolated":
+            # Create a new isolated session with random UUID
+            session_key = f"isolated:{uuid.uuid4()}"
+        elif job.session_target and job.session_target != "current":
+            # Use specified session key
+            session_key = job.session_target
+        else:
+            # Default: use cron job ID
+            session_key = f"cron:{job.id}"
+
         response = await agent.process_direct(
             job.payload.message,
-            session_key=f"cron:{job.id}",
+            session_key=session_key,
             channel=job.payload.channel or "cli",
             chat_id=job.payload.to or "direct",
         )

@@ -61,6 +61,18 @@ class CronTool(Tool):
                 "job_id": {
                     "type": "string",
                     "description": "Job ID (for remove)"
+                },
+                "session_target": {
+                    "type": "string",
+                    "description": "Session targeting: 'current' (default), 'isolated' (new session), or specific key"
+                },
+                "thinking": {
+                    "type": "string",
+                    "description": "Thinking level: 'low', 'high', or omit for default"
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Specific model to use (e.g., 'minimax/MiniMax-M2.5')"
                 }
             },
             "required": ["action"]
@@ -75,10 +87,13 @@ class CronTool(Tool):
         tz: str | None = None,
         at: str | None = None,
         job_id: str | None = None,
+        session_target: str = "current",
+        thinking: str | None = None,
+        model: str | None = None,
         **kwargs: Any
     ) -> str:
         if action == "add":
-            return self._add_job(message, every_seconds, cron_expr, tz, at)
+            return self._add_job(message, every_seconds, cron_expr, tz, at, session_target, thinking, model)
         elif action == "list":
             return self._list_jobs()
         elif action == "remove":
@@ -92,6 +107,9 @@ class CronTool(Tool):
         cron_expr: str | None,
         tz: str | None,
         at: str | None,
+        session_target: str = "current",
+        thinking: str | None = None,
+        model: str | None = None,
     ) -> str:
         if not message:
             return "Error: message is required for add"
@@ -105,7 +123,7 @@ class CronTool(Tool):
                 ZoneInfo(tz)
             except (KeyError, Exception):
                 return f"Error: unknown timezone '{tz}'"
-        
+
         # Build schedule
         delete_after = False
         if every_seconds:
@@ -120,7 +138,7 @@ class CronTool(Tool):
             delete_after = True
         else:
             return "Error: either every_seconds, cron_expr, or at is required"
-        
+
         job = self._cron.add_job(
             name=message[:30],
             schedule=schedule,
@@ -129,8 +147,11 @@ class CronTool(Tool):
             channel=self._channel,
             to=self._chat_id,
             delete_after_run=delete_after,
+            session_target=session_target,
+            thinking=thinking,
+            model=model,
         )
-        return f"Created job '{job.name}' (id: {job.id})"
+        return f"Created job '{job.name}' (id: {job.id}, session: {session_target})"
     
     def _list_jobs(self) -> str:
         jobs = self._cron.list_jobs()

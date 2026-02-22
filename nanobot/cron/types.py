@@ -50,6 +50,12 @@ class CronJob:
     created_at_ms: int = 0
     updated_at_ms: int = 0
     delete_after_run: bool = False
+    # Session targeting
+    session_target: str = "current"  # "current", "isolated", or specific key like "discord:123"
+    # Execution options
+    wake_mode: str = "default"  # "default", "now"
+    thinking: str | None = None  # "low", "high", or None for default
+    model: str | None = None  # specific model to use
 
 
 @dataclass

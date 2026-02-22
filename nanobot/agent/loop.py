@@ -24,6 +24,7 @@ from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.agent.tools.image import ImageUnderstandTool
 from nanobot.agent.tools.browser import BrowserTool
+from nanobot.agent.tools.session import SessionTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMProvider
@@ -137,6 +138,7 @@ class AgentLoop:
 
         # Browser tool
         self.tools.register(BrowserTool(workspace=self.workspace))
+        self.tools.register(SessionTool(session_manager=self.sessions))
 
         # Cron tool (for scheduling)
         if self.cron_service:
