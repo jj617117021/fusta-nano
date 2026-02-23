@@ -317,8 +317,8 @@ class AgentLoop:
             "check", "find", "search", "analyze", "look up", "research"
         ])
         
-        if is_complex_task and not forced:
-            # Add planning hint for complex tasks
+        if is_complex_task:
+            # Add planning hint for complex tasks (works with or without forced tools)
             for msg in messages:
                 if msg.get("role") == "system":
                     msg["content"] += "\n\n[PLANNING MODE] For complex tasks, first think about the steps needed and output a brief plan before executing tools. Format: 'Plan: 1. ... 2. ... 3. ...' Then execute tools one by one."
