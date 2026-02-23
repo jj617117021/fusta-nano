@@ -22,6 +22,7 @@ class BrowserTool(Tool):
 - **start**: Start a browser instance (e.g., {"action": "start", "browser": "chrome"})
 - **stop**: Stop the browser (e.g., {"action": "stop"})
 - **status**: Check browser status (e.g., {"action": "status"})
+- **profiles**: List all available profiles (e.g., {"action": "profiles"})
 
 **When user says "new tab", "open in new tab", "在新tab打开": MUST use new_tab action!**
 
@@ -134,6 +135,14 @@ TRUST [VERIFIED] results!"""
                     info = f"[BROWSER RUNNING] Port: {result.get('port')}, Browser: {result.get('browser')}"
                     return info
                 return f"[BROWSER OFFLINE] Port: {result.get('port')} - Use action=start to launch browser"
+
+            elif action == "profiles":
+                manager = self._get_manager()
+                result = manager.list_profiles()
+                lines = ["[PROFILES]"]
+                for name, config in result.get("profiles", {}).items():
+                    lines.append(f"  {name}: port={config['port']}, browser={config['browser']}")
+                return "\n".join(lines)
 
             # For all other actions, we need CDP connection
             cdp = await self._get_client(self._get_port(**kwargs))
@@ -407,7 +416,7 @@ TRUST [VERIFIED] results!"""
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["start", "stop", "status", "new_tab", "navigate", "open", "search", "click", "type", "press", "screenshot", "get_text", "snapshot", "tabs", "switch_tab", "close_tab"]
+                    "enum": ["start", "stop", "status", "profiles", "new_tab", "navigate", "open", "search", "click", "type", "press", "screenshot", "get_text", "snapshot", "tabs", "switch_tab", "close_tab"]
                 },
                 "browser": {
                     "type": "string",

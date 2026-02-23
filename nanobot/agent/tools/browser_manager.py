@@ -12,6 +12,15 @@ from typing import Any
 # Default CDP port for nanobot
 DEFAULT_CDP_PORT = 18800
 
+# Profile configurations
+# Each profile has: port, browser, color
+DEFAULT_PROFILES = {
+    "nanobot": {"port": 18800, "browser": "chrome", "color": "#FF4500"},
+    "chrome": {"port": 18801, "browser": "chrome", "color": "#4285F4"},
+    "brave": {"port": 18802, "browser": "brave", "color": "#FF6B00"},
+    "edge": {"port": 18803, "browser": "edge", "color": "#0078D4"},
+}
+
 # Known browser configurations
 BROWSERS = {
     "chrome": {
@@ -121,6 +130,21 @@ class BrowserManager:
         self.workspace = workspace or Path.home() / ".nanobot" / "workspace"
         self.browser_dir = self.workspace / "browser"
         self.browser_dir.mkdir(parents=True, exist_ok=True)
+        self.profiles = DEFAULT_PROFILES.copy()
+
+    def get_profile_config(self, profile: str) -> dict[str, Any]:
+        """Get profile configuration."""
+        return self.profiles.get(profile, {
+            "port": DEFAULT_CDP_PORT,
+            "browser": "chrome",
+            "color": "#FF4500"
+        })
+
+    def list_profiles(self) -> dict[str, Any]:
+        """List all available profiles."""
+        return {
+            "profiles": self.profiles
+        }
 
     def get_user_data_dir(self, profile: str = "nanobot") -> Path:
         """Get the user data directory for a profile."""
