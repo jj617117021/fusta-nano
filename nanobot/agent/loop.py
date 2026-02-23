@@ -417,11 +417,8 @@ class AgentLoop:
                             messages, tool_call.id, tool_call.name, result
                         )
                     
-                    # Plan Adherence Check: For tasks with plan, push current step in real-time
-                    if self._has_plan and on_progress:
-                        # Only show current step being worked on, don't auto-complete
-                        current_step = min(iteration, 4)  # Cap at 4 steps
-                        await on_progress(f"\n📋 **Current Step: {current_step}** in progress... ⏳\n")
+                    # Plan Adherence Check: For tasks with plan, DO NOT show progress in real-time
+                    # Only show final TODO list at the end (let model handle it)
                 
                 # If loop was detected and we broke out of the tool loop, exit the main loop too
                 if final_content and "LOOP DETECTED" in final_content:
