@@ -337,11 +337,11 @@ class AgentLoop:
             # Add planning hint for complex tasks (works with or without forced tools)
             for msg in messages:
                 if msg.get("role") == "system":
-                    msg["content"] += "\n\n[PLANNING MODE] For complex tasks, first think about the steps needed and output a brief plan before executing tools. Format: 'Plan: 1. ... 2. ... 3. ...' Then execute tools one by one. After completing each step, mark it as done with [x]."
+                    msg["content"] += "\n\n[PLANNING MODE] For complex tasks, first think about the steps needed and output a brief plan. IMPORTANT: Format your plan like this so I can track progress:\n\n**TODO:**\n- [ ] **Step 1 name**: description\n- [ ] **Step 2 name**: description\n- [ ] **Step 3 name**: description\n\nThen execute each step and mark them as [x] when done."
                     break
             messages.append({
                 "role": "user",
-                "content": "For this complex task, please first output a brief plan with numbered steps, then execute tools to complete it. After completing each step, mark it as [x] done."
+                "content": "For this complex task, please first output a TODO list with clear step names like '- [ ] **Search**: 搜索内容', then execute each step and mark them as [x] when done."
             })
             self._has_plan = True
         
