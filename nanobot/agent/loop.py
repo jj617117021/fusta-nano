@@ -417,8 +417,21 @@ class AgentLoop:
                             messages, tool_call.id, tool_call.name, result
                         )
                     
-                    # Plan Adherence Check: Only send update when model explicitly completes a step
-                    # We'll add a hint to prompt the model to signal step completion
+                    # Plan Adherence Check: Ask model to signal step completion, then push update
+                    if self._has_plan:
+                        # Add hint to prompt model to signal when a step is complete
+                        step_hint = "\n\nIMPORTANT: When you complete a step in your plan, explicitly say something like '[STEP 1 DONE]' or '[Step 1 completed]' so I can track progress."
+                        messages = self.context.add_tool_result(
+                            messages, tool_call.id, tool_call.name, result + step_hint
+                        )
+                        # Check if model signaled step completion in this response
+                        if on_progress and response.content:
+                            content_lower = response.content.lower()
+                            import re
+                            step_matches = re.findall(r'\[step\s*(\d+)\s*done\]', content_lower)
+                            if step_matches:
+                                step_num = step_matches[0]
+                                await on_progress(f"\n✅ **Step {step_num} completed!**\n")
                 
                 # If loop was detected and we broke out of the tool loop, exit the main loop too
                 if final_content and "LOOP DETECTED" in final_content:
