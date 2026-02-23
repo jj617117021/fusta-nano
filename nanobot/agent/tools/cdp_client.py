@@ -474,19 +474,15 @@ class CDPClient:
 
     async def get_snapshot(self, max_nodes: int = 50):
         """Get DOM snapshot with element refs using JavaScript."""
-        # Save current scroll position
-        await self._send_and_wait("Runtime.evaluate", {
-            "expression": "window.__savedScrollY = window.scrollY;"
-        })
         # Scroll to trigger lazy loading
         await self._send_and_wait("Runtime.evaluate", {
             "expression": "window.scrollTo(0, 500);"
         })
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1)
         await self._send_and_wait("Runtime.evaluate", {
             "expression": "window.scrollTo(0, 1000);"
         })
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1)
 
         # Use JavaScript to extract clickable elements - more comprehensive selector
         js_code = f"""
@@ -591,11 +587,6 @@ class CDPClient:
 
         # Store for later use
         self.ref_map = ref_map
-
-        # Restore scroll position
-        await self._send_and_wait("Runtime.evaluate", {
-            "expression": "window.scrollTo(0, window.__savedScrollY || 0);"
-        })
 
         return {"elements": elements, "ref_map": ref_map}
 
