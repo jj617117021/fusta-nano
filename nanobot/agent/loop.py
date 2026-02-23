@@ -272,10 +272,12 @@ class AgentLoop:
         browser_keywords = ["打开", "open", "navigate", "浏览", "search", "搜索", "搜", "website"]
         cron_keywords = ["定时", "cron", "reminder", "提醒", "schedule", "预约"]
         image_keywords = ["画", "生成图像", "generate image", "生成图片", "画图", "draw", "create image", "生成一只", "画一只", "生成一张", "画一张"]
+        session_keywords = ["clear session", "清除会话", "reset session", "新建会话", "clear memory", "清除记忆", "forget"]
         browser_forced = any(kw in user_message.lower() for kw in browser_keywords)
         cron_forced = any(kw in user_message.lower() for kw in cron_keywords)
         image_forced = any(kw in user_message.lower() for kw in image_keywords)
-        forced = browser_forced or cron_forced or image_forced
+        session_forced = any(kw in user_message.lower() for kw in session_keywords)
+        forced = browser_forced or cron_forced or image_forced or session_forced
         if browser_forced:
             # Add a system hint to force browser tool usage
             for msg in messages:
@@ -305,6 +307,16 @@ class AgentLoop:
             messages.append({
                 "role": "user",
                 "content": "IMPORTANT: You MUST use the generate_image tool to complete this request. Do not respond text-only - you must call the generate_image tool first."
+            })
+        if session_forced:
+            # Add a system hint for session/memory operations
+            for msg in messages:
+                if msg.get("role") == "system":
+                    msg["content"] += "\n\n[MANDATORY] You MUST use the session tool for session/memory operations. Do NOT claim to have performed an operation without actually calling the session tool."
+                    break
+            messages.append({
+                "role": "user",
+                "content": "IMPORTANT: You MUST use the session tool to complete this request. Do not respond text-only - you must call the session tool first."
             })
 
         # Reset tool call tracking at the start of each request
