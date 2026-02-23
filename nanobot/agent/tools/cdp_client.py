@@ -750,6 +750,151 @@ class CDPClient:
 
         return {"error": "Failed to close tab"}
 
+    async def wait_for_selector(self, selector: str, timeout: int = 30000):
+        """Wait for a selector to appear."""
+        result = await self._send_and_wait("DOM.waitForSelector", {
+            "selector": selector,
+            "timeout": timeout
+        })
+        return {"success": True, "selector": selector}
+
+    async def hover_by_ref(self, ref: str):
+        """Hover over an element by ref."""
+        # Find the element
+        elements = (await self.get_snapshot(max_nodes=100)).get("elements", [])
+        element = None
+        for el in elements:
+            if el.get("ref") == ref:
+                element = el
+                break
+
+        if not element:
+            return {"error": f"Element {ref} not found"}
+
+        node_id = element.get("nodeId")
+        if not node_id:
+            return {"error": "No nodeId for element"}
+
+        # Get element position
+        box_result = await self._send_and_wait("DOM.getBoxModel", {"nodeId": node_id})
+        model = box_result.get("result", {}).get("model")
+        if not model:
+            return {"error": "Could not get box model"}
+
+        # Calculate center
+        content = model.get("content", [])
+        if len(content) >= 8:
+            x = (content[0] + content[2] + content[4] + content[6]) / 4
+            y = (content[1] + content[3] + content[5] + content[7]) / 4
+
+            # Hover
+            await self._send_and_wait("Input.dispatchMouseEvent", {
+                "type": "mouseMoved",
+                "x": x,
+                "y": y
+            })
+            return {"success": True, "hovered": ref}
+
+        return {"error": "Could not calculate position"}
+
+    async def scroll(self, x: int = 0, y: int = 0):
+        """Scroll the page."""
+        result = await self._send_and_wait("Runtime.evaluate", {
+            "expression": f"window.scrollBy({x}, {y})",
+            "returnByValue": True
+        })
+        return {"success": True, "scrolled_to": f"x={x}, y={y}"}
+
+    async def scroll_to_selector(self, selector: str):
+        """Scroll to a specific selector."""
+        result = await self._send_and_wait("Runtime.evaluate", {
+            "expression": f"""
+                (function() {{
+                    const el = document.querySelector('{selector}');
+                    if (el) {{
+                        el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+                        return 'scrolled';
+                    }}
+                    return 'not found';
+                }})()
+            """,
+            "returnByValue": True
+        })
+        return {"success": True, "result": result.get("result", {}).get("result", {}).get("value", "")}
+
+    async def resize_viewport(self, width: int, height: int):
+        """Resize the viewport."""
+        result = await self._send_and_wait("Emulation.setDeviceMetricsOverride", {
+            "width": width,
+            "height": height,
+            "deviceScaleFactor": 1,
+            "mobile": False
+        })
+        return {"success": True, "size": f"{width}x{height}"}
+
+    async def evaluate(self, expression: str):
+        """Execute JavaScript and return result."""
+        result = await self._send_and_wait("Runtime.evaluate", {
+            "expression": expression,
+            "returnByValue": True,
+            "awaitPromise": True
+        })
+        eval_result = result.get("result", {})
+        if eval_result.get("type") == "object":
+            # Return serialized
+            return {"success": True, "result": str(eval_result.get("value", ""))}
+        return {"success": True, "result": eval_result.get("value", "")}
+
+    async def get_cookies(self):
+        """Get all cookies."""
+        result = await self._send_and_wait("Network.getAllCookies", {})
+        cookies = result.get("result", {}).get("cookies", [])
+        return {"success": True, "cookies": cookies}
+
+    async def set_cookie(self, name: str, value: str, domain: str = "", url: str = ""):
+        """Set a cookie."""
+        result = await self._send_and_wait("Network.setCookie", {
+            "name": name,
+            "value": value,
+            "domain": domain,
+            "url": url
+        })
+        return {"success": result.get("result", {}).get("success", False), "name": name}
+
+    async def delete_cookies(self, name: str, domain: str = ""):
+        """Delete a cookie."""
+        if domain:
+            await self._send_and_wait("Network.deleteCookies", {"name": name, "domain": domain})
+        else:
+            await self._send_and_wait("Network.deleteCookies", {"name": name})
+        return {"success": True, "deleted": name}
+
+    async def get_local_storage(self):
+        """Get localStorage items."""
+        result = await self._send_and_wait("Runtime.evaluate", {
+            "expression": "JSON.stringify(localStorage)",
+            "returnByValue": True
+        })
+        value = result.get("result", {}).get("result", {}).get("value", "{}")
+        try:
+            items = json.loads(value)
+        except:
+            items = {}
+        return {"success": True, "storage": items}
+
+    async def get_session_storage(self):
+        """Get sessionStorage items."""
+        result = await self._send_and_wait("Runtime.evaluate", {
+            "expression": "JSON.stringify(sessionStorage)",
+            "returnByValue": True
+        })
+        value = result.get("result", {}).get("result", {}).get("value", "{}")
+        try:
+            items = json.loads(value)
+        except:
+            items = {}
+        return {"success": True, "storage": items}
+
     async def close(self):
         """Close the connection."""
         if self.ws:

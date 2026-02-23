@@ -33,6 +33,12 @@ Actions:
 - snapshot: Get page with element refs (e1, e2, e3...) - USE THIS FIRST
 - click: Click by ref (e.g., {"action": "click", "ref": "e15"})
 - type: Type by ref (e.g., {"action": "type", "ref": "e15", "text": "hello"})
+- hover: Hover by ref (e.g., {"action": "hover", "ref": "e15"})
+- scroll: Scroll page (e.g., {"action": "scroll", "x": 0, "y": 500}) or {"action": "scroll", "selector": "#footer"})
+- resize: Resize viewport (e.g., {"action": "resize", "width": 1280, "height": 720})
+- evaluate: Execute JavaScript (e.g., {"action": "evaluate", "expression": "document.title"})
+- cookies: Get cookies (e.g., {"action": "cookies"})
+- storage: Get storage (e.g., {"action": "storage", "type": "local"})
 - screenshot: Take screenshot
 - get_text: Get page text
 - press: Press key (Enter, Escape, etc)
@@ -296,6 +302,69 @@ TRUST [VERIFIED] results!"""
                     return f"[VERIFIED] Closed tab: {tab_id}"
                 return f"[FAILED] {result.get('error')}"
 
+            elif action == "hover":
+                ref = kwargs.get("ref", "") or kwargs.get("key", "")
+                if not ref:
+                    return "Error: ref required"
+                result = await cdp.hover_by_ref(ref)
+                if result.get("success"):
+                    return f"[VERIFIED] Hovered over {ref}"
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "scroll":
+                x = kwargs.get("x", 0)
+                y = kwargs.get("y", 0)
+                selector = kwargs.get("selector", "")
+                if selector:
+                    result = await cdp.scroll_to_selector(selector)
+                else:
+                    result = await cdp.scroll(x=x, y=y)
+                if result.get("success"):
+                    return f"[VERIFIED] Scrolled"
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "resize":
+                width = kwargs.get("width", 1280)
+                height = kwargs.get("height", 720)
+                result = await cdp.resize_viewport(width, height)
+                if result.get("success"):
+                    return f"[VERIFIED] Resized to {width}x{height}"
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "evaluate":
+                expression = kwargs.get("expression", "") or kwargs.get("code", "")
+                if not expression:
+                    return "Error: expression required"
+                result = await cdp.evaluate(expression)
+                if result.get("success"):
+                    return f"[RESULT]\n{result.get('result', '')}"
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "cookies":
+                # Get cookies
+                result = await cdp.get_cookies()
+                if result.get("success"):
+                    cookies = result.get("cookies", [])
+                    lines = ["[COOKIES]"]
+                    for c in cookies[:20]:
+                        lines.append(f"  {c.get('name')}={c.get('value')[:30]}... domain={c.get('domain')}")
+                    return "\n".join(lines)
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "storage":
+                storage_type = kwargs.get("type", "local")  # local or session
+                if storage_type == "session":
+                    result = await cdp.get_session_storage()
+                else:
+                    result = await cdp.get_local_storage()
+                if result.get("success"):
+                    items = result.get("storage", {})
+                    lines = [f"[{storage_type.upper()} STORAGE]"]
+                    for k, v in items.items():
+                        lines.append(f"  {k}: {str(v)[:50]}")
+                    return "\n".join(lines)
+                return f"[FAILED] {result.get('error')}"
+
             elif action == "screenshot":
                 screenshots_dir = self.workspace / "screenshots"
                 screenshots_dir.mkdir(exist_ok=True)
@@ -416,7 +485,7 @@ TRUST [VERIFIED] results!"""
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["start", "stop", "status", "profiles", "new_tab", "navigate", "open", "search", "click", "type", "press", "screenshot", "get_text", "snapshot", "tabs", "switch_tab", "close_tab"]
+                    "enum": ["start", "stop", "status", "profiles", "new_tab", "navigate", "open", "search", "click", "type", "hover", "scroll", "resize", "evaluate", "cookies", "storage", "press", "screenshot", "get_text", "snapshot", "tabs", "switch_tab", "close_tab"]
                 },
                 "browser": {
                     "type": "string",
@@ -448,6 +517,13 @@ TRUST [VERIFIED] results!"""
                 "key": {"type": "string"},
                 "tab": {"type": "string"},
                 "tab_id": {"type": "string"},
+                "x": {"type": "integer"},
+                "y": {"type": "integer"},
+                "width": {"type": "integer"},
+                "height": {"type": "integer"},
+                "expression": {"type": "string"},
+                "code": {"type": "string"},
+                "type": {"type": "string", "enum": ["local", "session"]},
             },
             "required": ["action"]
         }
