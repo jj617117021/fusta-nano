@@ -417,18 +417,11 @@ class AgentLoop:
                             messages, tool_call.id, tool_call.name, result
                         )
                     
-                    # Plan Adherence Check: For tasks with plan, push full todo list in real-time
+                    # Plan Adherence Check: For tasks with plan, push current step in real-time
                     if self._has_plan and on_progress:
-                        # Show full todo list with checked/unchecked items
-                        todo_list = "\n📋 **Plan Progress:**\n"
-                        for i in range(1, 5):  # Show up to 5 steps
-                            if i < iteration:
-                                todo_list += f"- [x] Step {i} completed\n"
-                            elif i == iteration:
-                                todo_list += f"- [ ] Step {i} in progress...\n"
-                            else:
-                                todo_list += f"- [ ] Step {i} pending\n"
-                        await on_progress(todo_list)
+                        # Only show current step being worked on, don't auto-complete
+                        current_step = min(iteration, 4)  # Cap at 4 steps
+                        await on_progress(f"\n📋 **Current Step: {current_step}** in progress... ⏳\n")
                 
                 # If loop was detected and we broke out of the tool loop, exit the main loop too
                 if final_content and "LOOP DETECTED" in final_content:
