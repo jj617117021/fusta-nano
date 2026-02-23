@@ -329,16 +329,21 @@ class AgentLoop:
             "check", "find", "search", "analyze", "look up", "research"
         ])
         
+        # Track if this task should follow a plan
+        self._has_plan = False
+        self._plan_steps: list[str] = []
+        
         if is_complex_task:
             # Add planning hint for complex tasks (works with or without forced tools)
             for msg in messages:
                 if msg.get("role") == "system":
-                    msg["content"] += "\n\n[PLANNING MODE] For complex tasks, first think about the steps needed and output a brief plan before executing tools. Format: 'Plan: 1. ... 2. ... 3. ...' Then execute tools one by one."
+                    msg["content"] += "\n\n[PLANNING MODE] For complex tasks, first think about the steps needed and output a brief plan before executing tools. Format: 'Plan: 1. ... 2. ... 3. ...' Then execute tools one by one. After completing each step, mark it as done with [x]."
                     break
             messages.append({
                 "role": "user",
-                "content": "For this complex task, please first output a brief plan, then execute tools to complete it."
+                "content": "For this complex task, please first output a brief plan with numbered steps, then execute tools to complete it. After completing each step, mark it as [x] done."
             })
+            self._has_plan = True
         
         iteration = 0
         final_content = None
@@ -410,6 +415,14 @@ class AgentLoop:
                     else:
                         messages = self.context.add_tool_result(
                             messages, tool_call.id, tool_call.name, result
+                        )
+                    
+                    # Plan Adherence Check: For tasks with plan, verify the model is following it
+                    if self._has_plan:
+                        # Add a hint to check off completed plan items
+                        plan_hint = f"\n\n[PLAN TRACKING] You have a plan to follow. After completing each step, mark it as [x] done. Keep track of remaining steps: "
+                        messages = self.context.add_tool_result(
+                            messages, tool_call.id, tool_call.name, result + plan_hint
                         )
                 
                 # If loop was detected and we broke out of the tool loop, exit the main loop too
