@@ -16,68 +16,30 @@ class BrowserTool(Tool):
     """Browser automation tool using CDP."""
 
     name = "browser"
-    description = """Browser automation using Chrome DevTools Protocol.
+    description = """Browser automation using Playwright (default, more reliable for React) or CDP.
 
-**Browser Management:**
-- **start**: Start a browser instance (e.g., {"action": "start", "browser": "chrome"})
-- **stop**: Stop the browser (e.g., {"action": "stop"})
-- **status**: Check browser status (e.g., {"action": "status"})
-- **profiles**: List all available profiles (e.g., {"action": "profiles"})
+**IMPORTANT - Use this workflow:**
+1. start browser: {"action": "start"}
+2. search: {"action": "search", "query": "关键词", "url": "xiaohongshu"}
+3. snapshot: {"action": "snapshot"} - Get element refs (e1, e2...) AFTER search/navigate
+4. click: {"action": "click", "ref": "e5"} OR act: {"action": "act", "request": {"kind": "click", "ref": "e5"}}
 
-**When user says "new tab", "open in new tab", "在新tab打开": MUST use new_tab action!**
-
-Actions:
-- **new_tab**: Create NEW tab and open URL (e.g., {"action": "new_tab", "url": "youtube.com"})
-- navigate/open: Open URL in CURRENT tab (e.g., amazon.com)
-- search: Search - uses direct URL (e.g., amazon.com/s?k=query)
-- snapshot: Get page with element refs (e1, e2, e3...) - USE THIS FIRST
-- click: Click by ref (e.g., {"action": "click", "ref": "e15"})
-- type: Type by ref (e.g., {"action": "type", "ref": "e15", "text": "hello"})
-- hover: Hover by ref (e.g., {"action": "hover", "ref": "e15"})
-- scroll: Scroll page (e.g., {"action": "scroll", "x": 0, "y": 500}) or {"action": "scroll", "selector": "#footer"})
-- resize: Resize viewport (e.g., {"action": "resize", "width": 1280, "height": 720})
-- evaluate: Execute JavaScript (e.g., {"action": "evaluate", "expression": "document.title"})
-- cookies: Get cookies (e.g., {"action": "cookies"})
-- storage: Get storage (e.g., {"action": "storage", "type": "local"})
-- wait: Wait for condition (e.g., {"action": "wait", "url": "**/dash", "timeout": 10000})
-- console: Get console messages (e.g., {"action": "console"})
-- errors: Get page errors (e.g., {"action": "errors"})
-- download: Download file from URL (e.g., {"action": "download", "url": "https://...", "path": "/path"})
-- upload: Upload file to element (e.g., {"action": "upload", "selector": "input[type=file]", "path": "/file.txt"})
-- trace: Start/stop tracing (e.g., {"action": "trace", "mode": "start"}) or {"action": "trace", "mode": "stop"}
-- screenshot: Take screenshot
-- get_text: Get page text
-- press: Press key (Enter, Escape, etc)
-- tabs: List all tabs
-- switch_tab: Switch to tab (e.g., {"action": "switch_tab", "tab": "t2"})
-- close_tab: Close tab
-
-Parameters:
-- browser: "chrome", "brave", "edge", or "chromium" (default: chrome)
-- port: CDP port (default: 18800)
-- profile: profile name (default: nanobot)
-- headless: run in headless mode (default: false)
-
-Examples:
-- start: {"action": "start", "browser": "chrome", "port": 18800}
-- stop: {"action": "stop"}
-- status: {"action": "status"}
-- snapshot: {"action": "snapshot"}
-- click: {"action": "click", "ref": "e15"}
-- search: {"action": "search", "query": "丹麦", "url": "小红书"}
-- tabs: {"action": "tabs"}
-- new_tab: {"action": "new_tab", "url": "youtube.com"}
-- switch_tab: {"action": "switch_tab", "tab": "t2"}
+**Actions:** search, navigate, snapshot, click, act, scroll, screenshot, get_text
+**Browser:** start, stop, status
+**Tabs:** new_tab, tabs, switch_tab, close_tab
+**Input:** type, press
 
 TRUST [VERIFIED] results!"""
 
     def __init__(self, workspace: Path):
         self.workspace = workspace
         self.cdp = None
+        self.playwright = None
         self._lock = asyncio.Lock()
         self._manager = None
         self._port = DEFAULT_CDP_PORT
         self._browser = "chrome"
+        self._driver = "playwright"  # "cdp" or "playwright" (playwright is more reliable for React)
 
     def _get_manager(self):
         """Get browser manager instance."""
@@ -90,14 +52,23 @@ TRUST [VERIFIED] results!"""
         """Get port from kwargs or use default."""
         return kwargs.get("port", kwargs.get("cdp_port", DEFAULT_CDP_PORT))
 
-    async def _get_client(self, port: int | None = None):
-        """Get or create CDP client."""
+    async def _get_client(self, port: int | None = None, driver: str | None = None):
+        """Get or create browser client (CDP or Playwright)."""
+        target_driver = driver or self._driver
         target_port = port or self._port
-        if self.cdp is None:
-            from nanobot.agent.tools.cdp_client import CDPClient
-            self.cdp = CDPClient(host="127.0.0.1", port=target_port)
-            await self.cdp.connect()
-        return self.cdp
+
+        if target_driver == "playwright":
+            if self.playwright is None:
+                from nanobot.agent.tools.playwright_client import PlaywrightClient
+                self.playwright = PlaywrightClient(host="127.0.0.1", port=target_port)
+                await self.playwright.connect()
+            return self.playwright
+        else:
+            if self.cdp is None:
+                from nanobot.agent.tools.cdp_client import CDPClient
+                self.cdp = CDPClient(host="127.0.0.1", port=target_port)
+                await self.cdp.connect()
+            return self.cdp
 
     async def execute(self, action: str, **kwargs) -> str:
         """Execute a browser action."""
@@ -136,6 +107,10 @@ TRUST [VERIFIED] results!"""
                     if self.cdp:
                         await self.cdp.close()
                         self.cdp = None
+                    # Reset Playwright client
+                    if self.playwright:
+                        await self.playwright.close()
+                        self.playwright = None
                     return f"[VERIFIED] {result.get('message')}"
                 return f"[FAILED] {result.get('error')}"
 
@@ -156,8 +131,10 @@ TRUST [VERIFIED] results!"""
                     lines.append(f"  {name}: port={config['port']}, browser={config['browser']}")
                 return "\n".join(lines)
 
-            # For all other actions, we need CDP connection
-            cdp = await self._get_client(self._get_port(**kwargs))
+            # For all other actions, force playwright (more reliable for React apps)
+            # Ignore model-provided driver to ensure consistent behavior
+            driver = self._driver  # Always use playwright
+            cdp = await self._get_client(self._get_port(**kwargs), driver=driver)
 
             if action == "navigate" or action == "open":
                 url = kwargs.get("url") or kwargs.get("targetUrl") or kwargs.get("target_url", "")
@@ -475,7 +452,8 @@ TRUST [VERIFIED] results!"""
 
             elif action == "snapshot":
                 # Get DOM snapshot with refs
-                result = await cdp.get_snapshot()
+                # Use get_snapshot_dom for better results on Xiaohongshu (captures posts)
+                result = await cdp.get_snapshot_dom(max_nodes=50)
                 if "error" in result:
                     return f"[ERROR] {result.get('error')}"
 
@@ -488,7 +466,7 @@ TRUST [VERIFIED] results!"""
                 for el in elements[:30]:
                     ref = el.get("ref", "")
                     tag = el.get("tag", "")
-                    text = el.get("text", "")
+                    text = el.get("name", "") or el.get("text", "")
                     ptype = el.get("type", "")
                     placeholder = el.get("placeholder", "")
 
@@ -506,6 +484,34 @@ TRUST [VERIFIED] results!"""
 
                 return "\n".join(lines[:50])
 
+            elif action == "act":
+                # OpenClaw-style act action
+                # Request format: {"kind": "click", "ref": "e5"} or {"kind": "fill", "ref": "e8", "value": "text"}
+                import json
+                request = kwargs.get("request", {})
+                if isinstance(request, str):
+                    try:
+                        request = json.loads(request)
+                    except:
+                        return "Error: request must be JSON object"
+
+                kind = request.get("kind", "")
+                ref = request.get("ref", "")
+
+                if kind == "click" and ref:
+                    result = await cdp.click_by_ref(ref)
+                    if result.get("success"):
+                        return f"[VERIFIED] Clicked {ref}"
+                    return f"[FAILED] {result.get('error')}"
+                elif kind == "fill" and ref:
+                    value = request.get("value", "")
+                    result = await cdp.type_by_ref(ref, value)
+                    if result.get("success"):
+                        return f"[VERIFIED] Filled {ref}: {value}"
+                    return f"[FAILED] {result.get('error')}"
+                else:
+                    return f"Error: act requires kind=click/fill and ref"
+
             elif action == "click":
                 # Check if using ref (e1, e2) or selector
                 selector = kwargs.get("selector", "")
@@ -515,13 +521,14 @@ TRUST [VERIFIED] results!"""
                     # Use ref-based click
                     result = await cdp.click_by_ref(ref)
                     if result.get("success"):
+                        method = result.get("method", "unknown")
                         current_url = result.get("current_url", "")
                         navigated_to = result.get("navigated_to", "")
                         if navigated_to:
-                            return f"[VERIFIED] Clicked {ref}, navigated to: {navigated_to[:80]}"
+                            return f"[VERIFIED] Clicked {ref} ({method}), navigated to: {navigated_to[:80]}"
                         if current_url:
-                            return f"[VERIFIED] Clicked {ref}, now at: {current_url[:60]}"
-                        return f"[VERIFIED] Clicked {ref} (no URL returned)"
+                            return f"[VERIFIED] Clicked {ref} ({method}), now at: {current_url[:60]}"
+                        return f"[VERIFIED] Clicked {ref} ({method})"
                     return f"[FAILED] {result.get('error')} (ref={ref})"
                 elif selector:
                     # Use selector-based click
@@ -600,9 +607,11 @@ TRUST [VERIFIED] results!"""
                     "type": "boolean",
                     "description": "Run in headless mode"
                 },
+                # driver parameter removed - playwright is always used internally
                 "url": {"type": "string"},
                 "targetUrl": {"type": "string"},
                 "selector": {"type": "string"},
+                "save_scroll": {"type": "boolean", "description": "Save and restore scroll position after snapshot (default: true)"},
                 "text": {"type": "string"},
                 "query": {"type": "string"},
                 "keyword": {"type": "string"},
