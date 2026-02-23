@@ -417,13 +417,11 @@ class AgentLoop:
                             messages, tool_call.id, tool_call.name, result
                         )
                     
-                    # Plan Adherence Check: For tasks with plan, verify the model is following it
-                    if self._has_plan:
-                        # Add a hint to check off completed plan items
-                        plan_hint = f"\n\n[PLAN TRACKING] You have a plan to follow. After completing each step, mark it as [x] done. Keep track of remaining steps: "
-                        messages = self.context.add_tool_result(
-                            messages, tool_call.id, tool_call.name, result + plan_hint
-                        )
+                    # Plan Adherence Check: For tasks with plan, push progress in real-time
+                    if self._has_plan and on_progress:
+                        # Push plan progress to user in real-time (like Claude Code)
+                        plan_progress = f"\n📋 **Plan Progress:** Step {iteration} completed ✓"
+                        await on_progress(plan_progress)
                 
                 # If loop was detected and we broke out of the tool loop, exit the main loop too
                 if final_content and "LOOP DETECTED" in final_content:
