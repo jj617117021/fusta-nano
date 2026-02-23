@@ -417,8 +417,8 @@ class AgentLoop:
                             messages, tool_call.id, tool_call.name, result
                         )
                     
-                    # Plan Adherence Check: For tasks with plan, DO NOT show progress in real-time
-                    # Only show final TODO list at the end (let model handle it)
+                    # Plan Adherence Check: Only send update when model explicitly completes a step
+                    # We'll add a hint to prompt the model to signal step completion
                 
                 # If loop was detected and we broke out of the tool loop, exit the main loop too
                 if final_content and "LOOP DETECTED" in final_content:
