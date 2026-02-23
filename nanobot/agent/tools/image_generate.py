@@ -21,19 +21,24 @@ class ImageGenerateTool(Tool):
 
 **Image-to-image (edit):**
 - prompt: Description of how to modify the image
-- input_image: Path to the input image to modify
+- input_images: Path(s) to input image(s) for editing (supports up to 14 images)
 
 **Resolution:**
 - resolution: "1k", "2k", or "4k" (default: 1k)
 
 Example: {"prompt": "A cute cat", "resolution": "2k"}
-Example: {"prompt": "Make it blue", "input_image": "/path/to/image.png"}
+Example: {"prompt": "Make it blue", "input_images": ["/path/to/image.png"]}
+Example: {"prompt": "Combine these images", "input_images": ["/path/to/img1.png", "/path/to/img2.png"]}
 """
     parameters = {
         "type": "object",
         "properties": {
             "prompt": {"type": "string", "description": "Text description of the image to generate or how to modify"},
-            "input_image": {"type": "string", "description": "Path to input image for image-to-image editing"},
+            "input_images": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Path(s) to input image(s) for editing (supports up to 14 images)"
+            },
             "resolution": {
                 "type": "string",
                 "enum": ["1k", "2k", "4k"],
@@ -55,15 +60,34 @@ Example: {"prompt": "Make it blue", "input_image": "/path/to/image.png"}
         if self._client is None:
             try:
                 import google.genai as genai
+                from google.genai import types
                 self._client = genai.Client(api_key=self.api_key)
             except ImportError:
                 return None
         return self._client
 
+    def _get_genai_config(self, resolution: str):
+        """Get Google GenAI config for image generation."""
+        try:
+            from google.genai import types
+            res_map = {
+                "1k": "1K",
+                "2k": "2K",
+                "4k": "4K"
+            }
+            return types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"],
+                image_config=types.ImageConfig(
+                    image_size=res_map.get(resolution, "1K")
+                )
+            )
+        except ImportError:
+            return None
+
     async def execute(
         self,
         prompt: str,
-        input_image: str | None = None,
+        input_images: list[str] | None = None,
         resolution: str = "1k",
         **kwargs: Any
     ) -> str:
@@ -74,38 +98,75 @@ Example: {"prompt": "Make it blue", "input_image": "/path/to/image.png"}
         if client is None:
             return "Error: google-genai package not installed"
 
-        # Resolution to dimensions mapping
-        res_map = {
-            "1k": "1024x1024",
-            "2k": "2048x2048",
-            "4k": "4096x4096"
-        }
-
         try:
+            from PIL import Image as PILImage
+
+            # Handle backward compatibility: accept single input_image
+            if input_images is None:
+                input_images = kwargs.get("input_image")
+                if input_images:
+                    input_images = [input_images] if isinstance(input_images, str) else input_images
+
+            # Validate input images
+            if input_images and len(input_images) > 14:
+                return f"Error: Too many input images ({len(input_images)}). Maximum is 14."
+
             # Build contents
-            contents = [prompt]
+            contents = []
+            max_input_dim = 0
 
-            if input_image:
-                # Image-to-image: upload image and include in prompt
-                img_path = Path(input_image).expanduser()
-                if not img_path.exists():
-                    return f"Error: Image not found: {input_image}"
+            # Load and upload input images if provided
+            if input_images:
+                for img_path_str in input_images:
+                    img_path = Path(img_path_str).expanduser()
+                    if not img_path.exists():
+                        return f"Error: Image not found: {img_path_str}"
 
-                # Upload image
-                uploaded = client.files.upload(file=img_path)
-                contents = [uploaded, prompt]
+                    # Track largest dimension for auto-resolution
+                    try:
+                        img = PILImage.open(img_path)
+                        width, height = img.size
+                        max_input_dim = max(max_input_dim, width, height)
+                    except Exception:
+                        pass
 
-            # Generate image
-            response = client.models.generate_content(
-                model="gemini-3-pro-image-preview",
-                contents=contents
-            )
+                    # Upload image
+                    uploaded = client.files.upload(file=img_path)
+                    contents.append(uploaded)
+
+                contents.append(prompt)
+                img_count = len(input_images)
+            else:
+                contents = [prompt]
+
+            # Auto-detect resolution from largest input if not explicitly set
+            effective_resolution = resolution
+            if max_input_dim > 0 and resolution == "1k":
+                if max_input_dim >= 3000:
+                    effective_resolution = "4k"
+                elif max_input_dim >= 1500:
+                    effective_resolution = "2k"
+
+            # Generate image with resolution config
+            config = self._get_genai_config(effective_resolution)
+            if config:
+                response = client.models.generate_content(
+                    model="gemini-3-pro-image-preview",
+                    contents=contents,
+                    config=config
+                )
+            else:
+                response = client.models.generate_content(
+                    model="gemini-3-pro-image-preview",
+                    contents=contents
+                )
 
             lines = []
             lines.append(f"[IMAGE GENERATED: {prompt}]")
-            if input_image:
-                lines.append(f"[Edit mode: {input_image}]")
-            lines.append(f"[Resolution: {resolution}]")
+            if input_images:
+                img_count = len(input_images)
+                lines.append(f"[Edit mode: {img_count} image{'s' if img_count > 1 else ''}]")
+            lines.append(f"[Resolution: {effective_resolution}]")
 
             # Parse response
             if hasattr(response, 'candidates') and response.candidates:
