@@ -964,6 +964,72 @@ class CDPClient:
                 errors.append(entry.get("text", "Unknown error"))
         return {"success": True, "errors": errors}
 
+    async def download_file(self, url: str, path: str):
+        """Download a file from URL."""
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+                with open(path, "wb") as f:
+                    f.write(resp.content)
+                return {"success": True, "path": path}
+        return {"error": f"Download failed: {resp.status_code}"}
+
+    async def upload_file(self, selector: str, file_path: str):
+        """Upload a file to an input element."""
+        import os
+        if not os.path.exists(file_path):
+            return {"error": f"File not found: {file_path}"}
+
+        # Use file chooser CDP method
+        node_id = await self.query_selector(selector)
+        if not node_id:
+            return {"error": f"Element not found: {selector}"}
+
+        # Get the node's object ID for file upload
+        result = await self._send_and_wait("DOM.resolveNode", {"nodeId": node_id})
+        object_id = result.get("result", {}).get("object", {}).get("objectId")
+
+        if not object_id:
+            return {"error": "Could not get object ID"}
+
+        # Set file for upload
+        upload_result = await self._send_and_wait("DOM.setFileInputFiles", {
+            "objectId": object_id,
+            "files": [{"name": os.path.basename(file_path), "path": file_path}]
+        })
+
+        if upload_result.get("result", {}).get("success"):
+            return {"success": True, "file": file_path}
+        return {"error": "Upload failed"}
+
+    async def start_trace(self, path: str):
+        """Start tracing."""
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        await self._send_and_wait("Tracing.start", {})
+        return {"success": True, "path": path}
+
+    async def stop_trace(self, path: str):
+        """Stop tracing and save to file."""
+        # Stop tracing and collect
+        await self._send("Tracing.end", {})
+
+        # Wait for data
+        await asyncio.sleep(2)
+
+        # Get trace data
+        result = await self._send_and_wait("Tracing.getTrace", {})
+        trace_data = result.get("result", {}).get("value", "")
+
+        if trace_data:
+            import base64
+            with open(path, "w") as f:
+                f.write(base64.b64decode(trace_data).decode("utf-8"))
+            return {"success": True, "path": path}
+
+        return {"error": "No trace data"}
+
     async def close(self):
         """Close the connection."""
         if self.ws:

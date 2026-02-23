@@ -42,6 +42,9 @@ Actions:
 - wait: Wait for condition (e.g., {"action": "wait", "url": "**/dash", "timeout": 10000})
 - console: Get console messages (e.g., {"action": "console"})
 - errors: Get page errors (e.g., {"action": "errors"})
+- download: Download file from URL (e.g., {"action": "download", "url": "https://...", "path": "/path"})
+- upload: Upload file to element (e.g., {"action": "upload", "selector": "input[type=file]", "path": "/file.txt"})
+- trace: Start/stop tracing (e.g., {"action": "trace", "mode": "start"}) or {"action": "trace", "mode": "stop"}
 - screenshot: Take screenshot
 - get_text: Get page text
 - press: Press key (Enter, Escape, etc)
@@ -405,6 +408,55 @@ TRUST [VERIFIED] results!"""
                     return "\n".join(lines)
                 return f"[FAILED] {result.get('error')}"
 
+            elif action == "download":
+                url = kwargs.get("url", "")
+                path = kwargs.get("path", "")
+                if not url:
+                    return "Error: url required"
+                if not path:
+                    # Default to downloads folder
+                    downloads_dir = self.workspace / "downloads"
+                    downloads_dir.mkdir(exist_ok=True)
+                    import time
+                    path = str(downloads_dir / f"download_{int(time.time())}")
+                result = await cdp.download_file(url, path)
+                if result.get("success"):
+                    return f"[VERIFIED] Downloaded to: {result.get('path')}"
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "upload":
+                selector = kwargs.get("selector", "")
+                file_path = kwargs.get("path", "") or kwargs.get("file", "")
+                if not selector:
+                    return "Error: selector required"
+                if not file_path:
+                    return "Error: path required"
+                result = await cdp.upload_file(selector, file_path)
+                if result.get("success"):
+                    return f"[VERIFIED] Uploaded: {result.get('file')}"
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "trace":
+                # Start or stop trace
+                mode = kwargs.get("mode", "stop")  # start or stop
+                path = kwargs.get("path", "")
+                if not path:
+                    traces_dir = self.workspace / "traces"
+                    traces_dir.mkdir(exist_ok=True)
+                    import time
+                    path = str(traces_dir / f"trace_{int(time.time())}.json")
+
+                if mode == "start":
+                    result = await cdp.start_trace(path)
+                    if result.get("success"):
+                        return f"[VERIFIED] Trace started: {path}"
+                    return f"[FAILED] {result.get('error')}"
+                else:
+                    result = await cdp.stop_trace(path)
+                    if result.get("success"):
+                        return f"[VERIFIED] Trace saved to: {result.get('path')}"
+                    return f"[FAILED] {result.get('error')}"
+
             elif action == "screenshot":
                 screenshots_dir = self.workspace / "screenshots"
                 screenshots_dir.mkdir(exist_ok=True)
@@ -525,7 +577,7 @@ TRUST [VERIFIED] results!"""
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["start", "stop", "status", "profiles", "new_tab", "navigate", "open", "search", "click", "type", "hover", "scroll", "resize", "evaluate", "cookies", "storage", "wait", "console", "errors", "press", "screenshot", "get_text", "snapshot", "tabs", "switch_tab", "close_tab"]
+                    "enum": ["start", "stop", "status", "profiles", "new_tab", "navigate", "open", "search", "click", "type", "hover", "scroll", "resize", "evaluate", "cookies", "storage", "wait", "console", "errors", "download", "upload", "trace", "press", "screenshot", "get_text", "snapshot", "tabs", "switch_tab", "close_tab"]
                 },
                 "browser": {
                     "type": "string",
@@ -566,6 +618,9 @@ TRUST [VERIFIED] results!"""
                 "type": {"type": "string", "enum": ["local", "session"]},
                 "timeout": {"type": "integer", "description": "Timeout in milliseconds (default: 30000)"},
                 "load": {"type": "boolean", "description": "Wait for page load"},
+                "path": {"type": "string", "description": "File path for download/upload/trace"},
+                "file": {"type": "string", "description": "File path for upload"},
+                "mode": {"type": "string", "enum": ["start", "stop"], "description": "Mode for trace (start or stop)"},
             },
             "required": ["action"]
         }
