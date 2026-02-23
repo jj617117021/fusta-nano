@@ -198,68 +198,45 @@ class CDPClient:
         is_product = ref[0].lower() == 'p'
         if is_product:
             # For products/posts, find links with priority
-            # Use multiple selectors to handle different site structures
             js_code = f"""
             (function() {{
                 var allLinks = [];
-                // Priority 1: Xiaohongshu item pages - try multiple selectors
-                var selectors = [
-                    'a[href*="/search_result/"]',
-                    'a[href*="/explore/"]',
-                    'a[href*="/user/profile/"]',
-                    '.note-card a',
-                    '.feed-card a',
-                    '[data-type="note"] a',
-                    '.cover-container a',
-                    '.img-container a'
-                ];
-                for (var s = 0; s < selectors.length; s++) {{
-                    try {{
-                        var links = document.querySelectorAll(selectors[s]);
-                        for (var i = 0; i < links.length; i++) {{
-                            var el = links[i];
-                            if (!el.href || el.href.includes('javascript') || el.href === '#') continue;
-                            // Dedupe by href
-                            if (allLinks.some(function(l) {{ return l.href === el.href; }})) continue;
-                            var text = (el.innerText || el.alt || '').trim().substring(0, 60);
-                            allLinks.push({{
-                                href: el.href,
-                                text: text,
-                                priority: s,
-                                selector: selectors[s]
-                            }});
-                        }}
-                    }} catch(e) {{}}
+                // Priority 1: Xiaohongshu item pages (search_result and explore)
+                var links = document.querySelectorAll('a[href*="/search_result/"], a[href*="/explore/"]');
+                for (var i = 0; i < links.length; i++) {{
+                    var el = links[i];
+                    if (!el.href) continue;
+                    if (allLinks.some(function(l) {{ return l.href === el.href; }})) continue;
+                    var text = (el.innerText || el.alt || '').trim().substring(0, 60);
+                    allLinks.push({{href: el.href, text: text, priority: 1}});
                 }}
                 // Priority 2: Amazon products
-                var amazonLinks = document.querySelectorAll('a[href*="/dp/"], a[href*="/gp/product/"]');
-                for (var i = 0; i < amazonLinks.length; i++) {{
-                    var el = amazonLinks[i];
+                links = document.querySelectorAll('a[href*="/dp/"], a[href*="/gp/product/"]');
+                for (var i = 0; i < links.length; i++) {{
+                    var el = links[i];
                     if (!el.href) continue;
                     if (allLinks.some(function(l) {{ return l.href === el.href; }})) continue;
                     var text = (el.innerText || el.alt || '').trim().substring(0, 60);
-                    allLinks.push({{href: el.href, text: text, priority: 100}});
+                    allLinks.push({{href: el.href, text: text, priority: 2}});
                 }}
                 // Priority 3: YouTube
-                var ytLinks = document.querySelectorAll('a[href*="/watch?v="]');
-                for (var i = 0; i < ytLinks.length; i++) {{
-                    var el = ytLinks[i];
+                links = document.querySelectorAll('a[href*="/watch?v="]');
+                for (var i = 0; i < links.length; i++) {{
+                    var el = links[i];
                     if (!el.href) continue;
                     if (allLinks.some(function(l) {{ return l.href === el.href; }})) continue;
                     var text = (el.innerText || el.alt || '').trim().substring(0, 60);
-                    allLinks.push({{href: el.href, text: text, priority: 200}});
+                    allLinks.push({{href: el.href, text: text, priority: 3}});
                 }}
                 // Sort by priority
                 allLinks.sort(function(a, b) {{ return a.priority - b.priority; }});
                 if (allLinks.length === 0) {{
-                    // Try to find any clickable element
-                    var anyClickable = document.querySelectorAll('[data-clickable], [role="button"], .note-card, .feed-item');
-                    var debugInfo = [];
-                    for (var i = 0; i < Math.min(anyClickable.length, 5); i++) {{
-                        var el = anyClickable[i];
-                        debugInfo.push(el.tagName + ':' + (el.className || '').substring(0, 20));
+                    var debugLinks = [];
+                    var all = document.querySelectorAll('a[href]');
+                    for (var i = 0; i < Math.min(all.length, 5); i++) {{
+                        debugLinks.push(all[i].href.substring(0, 50));
                     }}
-                    return 'not_found|debug:' + debugInfo.join('|');
+                    return 'not_found|debug:' + debugLinks.join('|');
                 }}
                 if ({idx} >= allLinks.length) return 'not_found|index ' + {idx} + ' out of ' + allLinks.length;
                 var target = allLinks[{idx}];
@@ -282,150 +259,60 @@ class CDPClient:
                 product_url = data.get("href", "")
                 if not product_url:
                     return {"error": f"XHS click failed: empty URL. Try e refs."}
-
-                # Use JavaScript click() - better for React/single-page apps
-                # First scroll element into view, then click
-                js_click = f"""
-                (function() {{
-                    var allLinks = [];
-                    var selectors = [
-                        'a[href*="/search_result/"]',
-                        'a[href*="/explore/"]',
-                        'a[href*="/user/profile/"]',
-                        '.note-card a',
-                        '.feed-card a',
-                        '[data-type="note"] a',
-                        '.cover-container a',
-                        '.img-container a'
-                    ];
-                    for (var s = 0; s < selectors.length; s++) {{
-                        try {{
-                            var links = document.querySelectorAll(selectors[s]);
-                            for (var i = 0; i < links.length; i++) {{
-                                var el = links[i];
-                                if (!el.href || el.href.includes('javascript') || el.href === '#') continue;
-                                if (allLinks.some(function(l) {{ return l.href === el.href; }})) continue;
-                                allLinks.push({{href: el.href, el: el}});
-                            }}
-                        }} catch(e) {{}}
-                    }}
-                    // Add Amazon
-                    var amazonLinks = document.querySelectorAll('a[href*="/dp/"], a[href*="/gp/product/"]');
-                    for (var i = 0; i < amazonLinks.length; i++) {{
-                        var el = amazonLinks[i];
-                        if (!el.href) continue;
-                        if (allLinks.some(function(l) {{ return l.href === el.href; }})) continue;
-                        allLinks.push({{href: el.href, el: el}});
-                    }}
-                    // Add YouTube
-                    var ytLinks = document.querySelectorAll('a[href*="/watch?v="]');
-                    for (var i = 0; i < ytLinks.length; i++) {{
-                        var el = ytLinks[i];
-                        if (!el.href) continue;
-                        if (allLinks.some(function(l) {{ return l.href === el.href; }})) continue;
-                        allLinks.push({{href: el.href, el: el}});
-                    }}
-                    // Sort
-                    allLinks.sort(function(a, b) {{ return a.href.localeCompare(b.href); }});
-                    if ({idx} >= allLinks.length) return 'not_found|index';
-                    var target = allLinks[{idx}];
-                    var linkEl = target.el;
-                    // Scroll into view
-                    linkEl.scrollIntoView({{behavior: 'smooth', block: 'center'}});
-                    // Wait for scroll
-                    return 'ready|' + target.href;
-                }})()
-                """
-                click_result = await self._send_and_wait("Runtime.evaluate", {"expression": js_click, "returnByValue": True})
-                click_str = click_result.get("result", {}).get("result", {}).get("value", "")
-
-                if click_str and click_str.startswith("ready|"):
-                    # Now do the actual click using JavaScript
-                    js_do_click = f"""
-                    (function() {{
-                        var allLinks = [];
-                        var selectors = [
-                            'a[href*="/search_result/"]',
-                            'a[href*="/explore/"]',
-                            'a[href*="/user/profile/"]',
-                            '.note-card a',
-                            '.feed-card a',
-                            '[data-type="note"] a',
-                            '.cover-container a',
-                            '.img-container a'
-                        ];
-                        for (var s = 0; s < selectors.length; s++) {{
-                            try {{
-                                var links = document.querySelectorAll(selectors[s]);
-                                for (var i = 0; i < links.length; i++) {{
-                                    var el = links[i];
-                                    if (!el.href || el.href.includes('javascript') || el.href === '#') continue;
-                                    if (allLinks.some(function(l) {{ return l.href === el.href; }})) continue;
-                                    allLinks.push({{href: el.href, el: el}});
-                                }}
-                            }} catch(e) {{}}
-                        }}
-                        var amazonLinks = document.querySelectorAll('a[href*="/dp/"], a[href*="/gp/product/"]');
-                        for (var i = 0; i < amazonLinks.length; i++) {{
-                            var el = amazonLinks[i];
-                            if (!el.href) continue;
-                            if (allLinks.some(function(l) {{ return l.href === el.href; }})) continue;
-                            allLinks.push({{href: el.href, el: el}});
-                        }}
-                        var ytLinks = document.querySelectorAll('a[href*="/watch?v="]');
-                        for (var i = 0; i < ytLinks.length; i++) {{
-                            var el = ytLinks[i];
-                            if (!el.href) continue;
-                            if (allLinks.some(function(l) {{ return l.href === el.href; }})) continue;
-                            allLinks.push({{href: el.href, el: el}});
-                        }}
-                        allLinks.sort(function(a, b) {{ return a.href.localeCompare(b.href); }});
-                        if ({idx} >= allLinks.length) return 'fail|index';
-                        var target = allLinks[{idx}];
-                        var linkEl = target.el;
-                        try {{
-                            // Try native click first (works for most cases)
-                            linkEl.click();
-                            return 'clicked|' + target.href;
-                        }} catch(e) {{
-                            // Fallback: dispatch mouse events
-                            try {{
-                                linkEl.dispatchEvent(new MouseEvent('click', {{bubbles: true, cancelable: true, view: window}}));
-                                return 'clicked|' + target.href;
-                            }} catch(e2) {{
-                                return 'fail|' + e2.message;
-                            }}
-                        }}
-                    }})()
+                if product_url:
+                    # Get element position first, then use mouse click
+                    # First find the element and its position
+                    js_pos = """
+                    (function() {
+                        var links = document.querySelectorAll('a[href*="/search_result/"], a[href*="/explore/"]');
+                        for (var i = 0; i < links.length; i++) {
+                            if (links[i].href.indexOf('/search_result/') > 0 || links[i].href.indexOf('/explore/') > 0) {
+                                var rect = links[i].getBoundingClientRect();
+                                return JSON.stringify({x: rect.left + rect.width/2, y: rect.top + rect.height/2});
+                            }
+                        }
+                        return 'not_found';
+                    })()
                     """
-                    do_result = await self._send_and_wait("Runtime.evaluate", {"expression": js_do_click, "returnByValue": True})
-                    do_str = do_result.get("result", {}).get("result", {}).get("value", "")
+                    pos_result = await self._send_and_wait("Runtime.evaluate", {"expression": js_pos, "returnByValue": True})
+                    pos_str = pos_result.get("result", {}).get("result", {}).get("value", "")
 
-                    if do_str and do_str.startswith("clicked|"):
-                        await asyncio.sleep(3)
-                        return {"success": True, "ref": ref, "clicked": True, "url": do_str.replace("clicked|", "")}
+                    import json
+                    if pos_str and pos_str != 'not_found':
+                        try:
+                            pos = json.loads(pos_str)
+                            x, y = pos.get("x", 0), pos.get("y", 0)
+                            # Use CDP mouse click
+                            await self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+                            await asyncio.sleep(0.5)
+                            await self._send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
+                            await self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left"})
+                            await asyncio.sleep(3)
+                            return {"success": True, "ref": ref, "clicked": True}
+                        except:
+                            pass
 
-                # Fallback: direct navigation
-                if product_url.startswith('/'):
-                    product_url = "https://www.xiaohongshu.com" + product_url
-                await self.navigate(product_url)
-                await asyncio.sleep(3)
-                return {"success": True, "ref": ref, "navigated_to": product_url}
+                    # Fallback to direct navigation
+                    if product_url.startswith('/'):
+                        product_url = "https://www.xiaohongshu.com" + product_url
+                    await self.navigate(product_url)
+                    await asyncio.sleep(3)
+                    return {"success": True, "ref": ref, "navigated_to": product_url}
             except Exception as e:
                 return {"error": f"Product click failed: {str(e)}"}
             return {"error": f"Product {ref} not found"}
         else:
-            # For regular elements - use JavaScript click() for better React support
+            # For regular elements
             js_code = f"""
             (function() {{
-                var refs = document.querySelectorAll('a, button, input, [onclick], [role="button"], [role="link"], img, div[data-clickable="true"], .note-card, .feed-item, [data-testid]');
+                var refs = document.querySelectorAll('a, button, input, [onclick], [role="button"], img, div[data-clickable="true"]');
                 var seen = new Set();
                 var count = 0;
                 for (var i = 0; i < refs.length; i++) {{
                     var el = refs[i];
                     var rect = el.getBoundingClientRect();
                     if (rect.width < 5 || rect.height < 5 || el.hidden || el.disabled) continue;
-                    var key = el.tagName + '-' + (el.innerText || el.alt || '').substring(0, 30) + '-' + Math.round(rect.left) + '-' + Math.round(rect.top);
+                    var key = el.tagName + '-' + el.innerText.substring(0, 30) + '-' + rect.left + '-' + rect.top;
                     if (seen.has(key)) continue;
                     seen.add(key);
                     if (count === {idx}) {{
@@ -433,9 +320,7 @@ class CDPClient:
                             x: rect.left + rect.width / 2,
                             y: rect.top + rect.height / 2,
                             tag: el.tagName,
-                            text: (el.innerText || el.alt || el.value || '').substring(0, 30),
-                            href: el.href || '',
-                            type: el.type || ''
+                            text: (el.innerText || el.alt || '').substring(0, 30)
                         }});
                     }}
                     count++;
@@ -459,67 +344,29 @@ class CDPClient:
         except:
             return {"error": "Failed to parse element position"}
 
-        # Use JavaScript click() instead of CDP mouse events for better React/single-page app support
-        js_click = f"""
-        (function() {{
-            var refs = document.querySelectorAll('a, button, input, [onclick], [role="button"], [role="link"], img, div[data-clickable="true"], .note-card, .feed-item, [data-testid]');
-            var seen = new Set();
-            var count = 0;
-            for (var i = 0; i < refs.length; i++) {{
-                var el = refs[i];
-                var rect = el.getBoundingClientRect();
-                if (rect.width < 5 || rect.height < 5 || el.hidden || el.disabled) continue;
-                var key = el.tagName + '-' + (el.innerText || el.alt || '').substring(0, 30) + '-' + Math.round(rect.left) + '-' + Math.round(rect.top);
-                if (seen.has(key)) continue;
-                seen.add(key);
-                if (count === {idx}) {{
-                    // Scroll into view first
-                    el.scrollIntoView({{behavior: 'smooth', block: 'center'}});
-                    try {{
-                        el.click();
-                        return 'clicked|' + (el.href || '');
-                    }} catch(e) {{
-                        try {{
-                            el.dispatchEvent(new MouseEvent('click', {{bubbles: true, cancelable: true, view: window}}));
-                            return 'clicked|' + (el.href || '');
-                        }} catch(e2) {{
-                            return 'fail|' + e2.message;
-                        }}
-                    }}
-                }}
-                count++;
-            }}
-            return 'not found';
-        }})()
-        """
+        x, y = pos.get("x", 0), pos.get("y", 0)
 
-        click_result = await self._send_and_wait("Runtime.evaluate", {
-            "expression": js_click,
-            "returnByValue": True
+        # Use CDP mouse events for real click
+        await self._send("Input.dispatchMouseEvent", {
+            "type": "mouseMoved",
+            "x": x,
+            "y": y
+        })
+        await self._send("Input.dispatchMouseEvent", {
+            "type": "mousePressed",
+            "x": x,
+            "y": y,
+            "button": "left",
+            "clickCount": 1
+        })
+        await self._send("Input.dispatchMouseEvent", {
+            "type": "mouseReleased",
+            "x": x,
+            "y": y,
+            "button": "left"
         })
 
-        click_str = click_result.get("result", {}).get("result", {}).get("value", "")
-
-        if click_str and click_str.startswith("clicked|"):
-            await asyncio.sleep(1)
-            return {"success": True, "ref": ref, "clicked": True}
-        elif click_str and click_str.startswith("fail|"):
-            # Fallback to CDP mouse events
-            x, y = pos.get("x", 0), pos.get("y", 0)
-            await self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
-            await asyncio.sleep(0.3)
-            await self._send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
-            await self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left"})
-            await asyncio.sleep(1)
-            return {"success": True, "ref": ref, "clicked": True, "fallback": True}
-
-        # Last resort: CDP mouse events
-        x, y = pos.get("x", 0), pos.get("y", 0)
-        await self._send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
-        await asyncio.sleep(0.3)
-        await self._send("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
-        await self._send("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left"})
-
+        # Wait briefly for potential navigation
         await asyncio.sleep(1)
 
         # Check if URL changed
