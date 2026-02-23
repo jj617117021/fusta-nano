@@ -895,6 +895,75 @@ class CDPClient:
             items = {}
         return {"success": True, "storage": items}
 
+    async def wait_for_url(self, url_pattern: str, timeout: int = 30000):
+        """Wait for URL to match pattern."""
+        import time
+        start = time.time()
+        while (time.time() - start) * 1000 < timeout:
+            result = await self._send_and_wait("Page.getNavigationHistory", {})
+            current_url = result.get("result", {}).get("entries", [{}])[-1].get("url", "")
+            if url_pattern in current_url or (url_pattern.startswith("**") and current_url.startswith(url_pattern[2:])):
+                return {"success": True, "url": current_url}
+            await asyncio.sleep(0.5)
+        return {"error": "Timeout waiting for URL"}
+
+    async def wait_for_load(self, timeout: int = 30000):
+        """Wait for page to load."""
+        import time
+        start = time.time()
+        while (time.time() - start) * 1000 < timeout:
+            result = await self._send_and_wait("Page.getLoadEventFired", {})
+            if result.get("result"):
+                return {"success": True}
+            await asyncio.sleep(0.5)
+        return {"error": "Timeout waiting for load"}
+
+    async def wait_for_selector(self, selector: str, timeout: int = 30000):
+        """Wait for selector to appear."""
+        import time
+        start = time.time()
+        while (time.time() - start) * 1000 < timeout:
+            node_id = await self.query_selector(selector)
+            if node_id:
+                return {"success": True, "selector": selector}
+            await asyncio.sleep(0.5)
+        return {"error": f"Timeout waiting for selector: {selector}"}
+
+    async def wait(self, url: str = "", selector: str = "", load: bool = False, timeout: int = 30000):
+        """Wait for conditions: url, selector, or load."""
+        if url:
+            return await self.wait_for_url(url, timeout)
+        if selector:
+            return await self.wait_for_selector(selector, timeout)
+        if load:
+            return await self.wait_for_load(timeout)
+        return {"error": "No wait condition specified"}
+
+    async def get_console_messages(self):
+        """Get console messages."""
+        # Enable console domain first
+        await self._send("Log.enable", {})
+        result = await self._send_and_wait("Log.getEntries", {})
+        entries = result.get("result", {}).get("entries", [])
+        messages = []
+        for entry in entries:
+            msg_type = entry.get("type", "log")
+            text = entry.get("text", "")
+            messages.append(f"[{msg_type}] {text}")
+        return {"success": True, "messages": messages[:50]}
+
+    async def get_errors(self):
+        """Get page errors."""
+        # Enable console domain
+        await self._send("Log.enable", {})
+        result = await self._send_and_wait("Log.getEntries", {})
+        entries = result.get("result", {}).get("entries", [])
+        errors = []
+        for entry in entries:
+            if entry.get("level") == "error":
+                errors.append(entry.get("text", "Unknown error"))
+        return {"success": True, "errors": errors}
+
     async def close(self):
         """Close the connection."""
         if self.ws:

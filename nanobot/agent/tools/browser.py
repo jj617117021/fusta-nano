@@ -39,6 +39,9 @@ Actions:
 - evaluate: Execute JavaScript (e.g., {"action": "evaluate", "expression": "document.title"})
 - cookies: Get cookies (e.g., {"action": "cookies"})
 - storage: Get storage (e.g., {"action": "storage", "type": "local"})
+- wait: Wait for condition (e.g., {"action": "wait", "url": "**/dash", "timeout": 10000})
+- console: Get console messages (e.g., {"action": "console"})
+- errors: Get page errors (e.g., {"action": "errors"})
 - screenshot: Take screenshot
 - get_text: Get page text
 - press: Press key (Enter, Escape, etc)
@@ -365,6 +368,43 @@ TRUST [VERIFIED] results!"""
                     return "\n".join(lines)
                 return f"[FAILED] {result.get('error')}"
 
+            elif action == "wait":
+                url = kwargs.get("url", "")
+                selector = kwargs.get("selector", "")
+                load = kwargs.get("load", False)
+                timeout = kwargs.get("timeout", 30000)
+                result = await cdp.wait(url=url, selector=selector, load=load, timeout=timeout)
+                if result.get("success"):
+                    if url:
+                        return f"[VERIFIED] URL matched: {result.get('url')}"
+                    if selector:
+                        return f"[VERIFIED] Selector found: {selector}"
+                    if load:
+                        return f"[VERIFIED] Page loaded"
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "console":
+                result = await cdp.get_console_messages()
+                if result.get("success"):
+                    messages = result.get("messages", [])
+                    if not messages:
+                        return "[CONSOLE] No messages"
+                    lines = ["[CONSOLE]"]
+                    lines.extend(messages[:20])
+                    return "\n".join(lines)
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "errors":
+                result = await cdp.get_errors()
+                if result.get("success"):
+                    errors = result.get("errors", [])
+                    if not errors:
+                        return "[ERRORS] No page errors"
+                    lines = ["[PAGE ERRORS]"]
+                    lines.extend(errors[:10])
+                    return "\n".join(lines)
+                return f"[FAILED] {result.get('error')}"
+
             elif action == "screenshot":
                 screenshots_dir = self.workspace / "screenshots"
                 screenshots_dir.mkdir(exist_ok=True)
@@ -485,7 +525,7 @@ TRUST [VERIFIED] results!"""
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["start", "stop", "status", "profiles", "new_tab", "navigate", "open", "search", "click", "type", "hover", "scroll", "resize", "evaluate", "cookies", "storage", "press", "screenshot", "get_text", "snapshot", "tabs", "switch_tab", "close_tab"]
+                    "enum": ["start", "stop", "status", "profiles", "new_tab", "navigate", "open", "search", "click", "type", "hover", "scroll", "resize", "evaluate", "cookies", "storage", "wait", "console", "errors", "press", "screenshot", "get_text", "snapshot", "tabs", "switch_tab", "close_tab"]
                 },
                 "browser": {
                     "type": "string",
@@ -524,6 +564,8 @@ TRUST [VERIFIED] results!"""
                 "expression": {"type": "string"},
                 "code": {"type": "string"},
                 "type": {"type": "string", "enum": ["local", "session"]},
+                "timeout": {"type": "integer", "description": "Timeout in milliseconds (default: 30000)"},
+                "load": {"type": "boolean", "description": "Wait for page load"},
             },
             "required": ["action"]
         }
