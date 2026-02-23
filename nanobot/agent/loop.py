@@ -156,6 +156,39 @@ class AgentLoop:
         if self.cron_service:
             self.tools.register(CronTool(self.cron_service))
 
+        # Loop detection: track (tool_name, args_hash) to detect repetitive calls
+        self._tool_call_history: list[tuple[str, str]] = []
+        self._loop_detection_max: int = 3  # Max consecutive identical calls before stopping
+
+    def _track_tool_call(self, tool_name: str, args: dict) -> bool:
+        """
+        Track tool call for loop detection.
+        Returns True if loop detected (3+ consecutive identical calls), False otherwise.
+        """
+        # Create a hashable key from tool_name + sorted args
+        args_str = json.dumps(args, sort_keys=True, ensure_ascii=False)
+        call_key = (tool_name, args_str)
+        
+        # Check if this is the same as the last call
+        if self._tool_call_history and self._tool_call_history[-1] == call_key:
+            self._tool_call_history.append(call_key)
+        else:
+            # Reset history if different call
+            self._tool_call_history = [call_key]
+        
+        # Check if we've exceeded the threshold
+        if len(self._tool_call_history) >= self._loop_detection_max:
+            # Check if ALL calls in history are identical
+            if all(key == self._tool_call_history[0] for key in self._tool_call_history):
+                logger.warning("Loop detected: {} consecutive identical tool calls", len(self._tool_call_history))
+                return True
+        
+        return False
+
+    def _reset_tool_tracking(self) -> None:
+        """Reset tool call tracking at the start of each user request."""
+        self._tool_call_history = []
+
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
         if self._mcp_connected or self._mcp_connecting or not self._mcp_servers:
@@ -274,6 +307,9 @@ class AgentLoop:
                 "content": "IMPORTANT: You MUST use the generate_image tool to complete this request. Do not respond text-only - you must call the generate_image tool first."
             })
 
+        # Reset tool call tracking at the start of each request
+        self._reset_tool_tracking()
+        
         iteration = 0
         final_content = None
         tools_used: list[str] = []
@@ -317,10 +353,25 @@ class AgentLoop:
                     tools_used.append(tool_call.name)
                     args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
                     logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
+                    
+                    # Loop detection: check if this is a repetitive call
+                    if self._track_tool_call(tool_call.name, tool_call.arguments):
+                        loop_message = f"[LOOP DETECTED] Detected {self._loop_detection_max} consecutive identical tool calls: {tool_call.name} with identical arguments. Stopping to prevent infinite loop. Please try a different approach."
+                        logger.warning(loop_message)
+                        messages = self.context.add_tool_result(
+                            messages, tool_call.id, tool_call.name, loop_message
+                        )
+                        final_content = loop_message
+                        break
+                    
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
                     )
+                
+                # If loop was detected and we broke out of the tool loop, exit the main loop too
+                if final_content and "LOOP DETECTED" in final_content:
+                    break
             else:
                 final_content = self._strip_think(response.content)
                 # Some models send an interim text response before tool calls.
