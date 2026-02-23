@@ -118,8 +118,23 @@ Example: {"prompt": "Make it blue", "input_image": "/path/to/image.png"}
                                 images_dir = self.workspace / "images"
                                 images_dir.mkdir(parents=True, exist_ok=True)
                                 img_path = images_dir / f"generated_{int(time.time())}.png"
-                                with open(img_path, "wb") as f:
-                                    f.write(img_data)
+
+                                # Use PIL to properly process and save the image
+                                # This ensures correct format (converts JPEG data to proper PNG)
+                                from io import BytesIO
+                                from PIL import Image as PILImage
+
+                                image = PILImage.open(BytesIO(img_data))
+
+                                # Convert RGBA to RGB with white background if needed
+                                if image.mode == 'RGBA':
+                                    rgb_image = PILImage.new('RGB', image.size, (255, 255, 255))
+                                    rgb_image.paste(image, mask=image.split()[3])
+                                    rgb_image.save(str(img_path), 'PNG')
+                                elif image.mode == 'RGB':
+                                    image.save(str(img_path), 'PNG')
+                                else:
+                                    image.convert('RGB').save(str(img_path), 'PNG')
                                 # Return special format to indicate image for Discord delivery
                                 # Use IMAGE_MEDIA which is processed before LLM transformation
                                 lines.append(f"\n[IMAGE_MEDIA:{img_path}]")
