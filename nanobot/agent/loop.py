@@ -341,7 +341,7 @@ class AgentLoop:
                     break
             messages.append({
                 "role": "user",
-                "content": "For this complex task, please first output a TODO list with clear step names like '- [ ] **Search**: 搜索内容', then execute each step and mark them as [x] when done."
+                "content": "For this complex task, please first output a plan with clear step names like '- [ ] **Search**: 搜索内容', then execute each step and mark them as [x] when done."
             })
             self._has_plan = True
         
@@ -417,25 +417,7 @@ class AgentLoop:
                             messages, tool_call.id, tool_call.name, result
                         )
                     
-                    # Plan Adherence Check: Detect checklist format with full step names, push update
-                    if self._has_plan:
-                        # Add hint to prompt model to use checklist format with step names
-                        checklist_hint = "\n\nIMPORTANT: When you complete a step in your plan, update your TODO list like '- [x] **Search**: description' so I can track progress."
-                        messages = self.context.add_tool_result(
-                            messages, tool_call.id, tool_call.name, result + checklist_hint
-                        )
-                        # Check if model updated checklist with [x] and extract full step info
-                        if on_progress and response.content:
-                            import re
-                            # Match full line with [x] and step name like "- [x] **Search**: description"
-                            completed_matches = re.findall(r'-?\s*\[x\]\s*(\*\*[\w\s]+\*\*|\w+)(?:\s*[-:]\s*|\s*::\s*)(.+)', response.content, re.IGNORECASE)
-                            if completed_matches:
-                                # Show full progress with step names
-                                progress_msg = "\n📋 **Plan Progress:**\n"
-                                for step_name, step_desc in completed_matches:
-                                    step_name = step_name.strip().replace('**', '')
-                                    progress_msg += f"- [x] **{step_name}**: {step_desc.strip()[:50]}...\n"
-                                await on_progress(progress_msg + "\n")
+                    # Plan Adherence Check removed - let model handle final progress display
                 
                 # If loop was detected and we broke out of the tool loop, exit the main loop too
                 if final_content and "LOOP DETECTED" in final_content:
