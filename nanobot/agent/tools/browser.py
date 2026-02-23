@@ -8,11 +8,20 @@ from typing import Any
 from nanobot.agent.tools.base import Tool
 
 
+# Default CDP port
+DEFAULT_CDP_PORT = 18800
+
+
 class BrowserTool(Tool):
     """Browser automation tool using CDP."""
 
     name = "browser"
     description = """Browser automation using Chrome DevTools Protocol.
+
+**Browser Management:**
+- **start**: Start a browser instance (e.g., {"action": "start", "browser": "chrome"})
+- **stop**: Stop the browser (e.g., {"action": "stop"})
+- **status**: Check browser status (e.g., {"action": "status"})
 
 **When user says "new tab", "open in new tab", "在新tab打开": MUST use new_tab action!**
 
@@ -30,7 +39,16 @@ Actions:
 - switch_tab: Switch to tab (e.g., {"action": "switch_tab", "tab": "t2"})
 - close_tab: Close tab
 
+Parameters:
+- browser: "chrome", "brave", "edge", or "chromium" (default: chrome)
+- port: CDP port (default: 18800)
+- profile: profile name (default: nanobot)
+- headless: run in headless mode (default: false)
+
 Examples:
+- start: {"action": "start", "browser": "chrome", "port": 18800}
+- stop: {"action": "stop"}
+- status: {"action": "status"}
 - snapshot: {"action": "snapshot"}
 - click: {"action": "click", "ref": "e15"}
 - search: {"action": "search", "query": "丹麦", "url": "小红书"}
@@ -44,19 +62,81 @@ TRUST [VERIFIED] results!"""
         self.workspace = workspace
         self.cdp = None
         self._lock = asyncio.Lock()
+        self._manager = None
+        self._port = DEFAULT_CDP_PORT
+        self._browser = "chrome"
 
-    async def _get_client(self):
+    def _get_manager(self):
+        """Get browser manager instance."""
+        if self._manager is None:
+            from nanobot.agent.tools.browser_manager import BrowserManager
+            self._manager = BrowserManager(workspace=self.workspace)
+        return self._manager
+
+    def _get_port(self, **kwargs) -> int:
+        """Get port from kwargs or use default."""
+        return kwargs.get("port", kwargs.get("cdp_port", DEFAULT_CDP_PORT))
+
+    async def _get_client(self, port: int | None = None):
         """Get or create CDP client."""
+        target_port = port or self._port
         if self.cdp is None:
             from nanobot.agent.tools.cdp_client import CDPClient
-            self.cdp = CDPClient(host="127.0.0.1", port=18800)
+            self.cdp = CDPClient(host="127.0.0.1", port=target_port)
             await self.cdp.connect()
         return self.cdp
 
     async def execute(self, action: str, **kwargs) -> str:
         """Execute a browser action."""
         try:
-            cdp = await self._get_client()
+            # Handle browser management actions first (don't require CDP connection)
+            if action == "start":
+                browser = kwargs.get("browser", "chrome")
+                port = self._get_port(**kwargs)
+                profile = kwargs.get("profile", "nanobot")
+                headless = kwargs.get("headless", False)
+
+                # Update instance state
+                self._port = port
+                self._browser = browser
+
+                manager = self._get_manager()
+                result = await manager.start(
+                    browser=browser,
+                    port=port,
+                    profile=profile,
+                    headless=headless,
+                )
+                if result.get("success"):
+                    msg = f"[VERIFIED] {result.get('message')}"
+                    if result.get("pid"):
+                        msg += f" (PID: {result.get('pid')})"
+                    return msg
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "stop":
+                port = self._get_port(**kwargs)
+                manager = self._get_manager()
+                result = await manager.stop(port=port)
+                if result.get("success"):
+                    # Reset CDP client
+                    if self.cdp:
+                        await self.cdp.close()
+                        self.cdp = None
+                    return f"[VERIFIED] {result.get('message')}"
+                return f"[FAILED] {result.get('error')}"
+
+            elif action == "status":
+                port = self._get_port(**kwargs)
+                manager = self._get_manager()
+                result = await manager.status(port=port)
+                if result.get("running"):
+                    info = f"[BROWSER RUNNING] Port: {result.get('port')}, Browser: {result.get('browser')}"
+                    return info
+                return f"[BROWSER OFFLINE] Port: {result.get('port')} - Use action=start to launch browser"
+
+            # For all other actions, we need CDP connection
+            cdp = await self._get_client(self._get_port(**kwargs))
 
             if action == "navigate" or action == "open":
                 url = kwargs.get("url") or kwargs.get("targetUrl") or kwargs.get("target_url", "")
@@ -327,7 +407,28 @@ TRUST [VERIFIED] results!"""
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["new_tab", "navigate", "open", "search", "click", "type", "press", "screenshot", "get_text", "snapshot", "status", "stop", "tabs", "switch_tab", "close_tab"]
+                    "enum": ["start", "stop", "status", "new_tab", "navigate", "open", "search", "click", "type", "press", "screenshot", "get_text", "snapshot", "tabs", "switch_tab", "close_tab"]
+                },
+                "browser": {
+                    "type": "string",
+                    "enum": ["chrome", "brave", "edge", "chromium"],
+                    "description": "Browser to use"
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "CDP port (default: 18800)"
+                },
+                "cdp_port": {
+                    "type": "integer",
+                    "description": "CDP port (alias for port)"
+                },
+                "profile": {
+                    "type": "string",
+                    "description": "Profile name (default: nanobot)"
+                },
+                "headless": {
+                    "type": "boolean",
+                    "description": "Run in headless mode"
                 },
                 "url": {"type": "string"},
                 "targetUrl": {"type": "string"},
