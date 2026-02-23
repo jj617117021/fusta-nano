@@ -20,6 +20,7 @@
 
 ## 📢 News
 
+- **2026-02-22** 🖼️ **Image Generation** — Added **generate_image** tool using Google's Gemini API. Generated images are automatically sent to chat channels (Discord, Telegram, etc.). Supports text-to-image generation with resolution options (1k, 2k, 4k).
 - **2026-02-22** 🚀 **fusta-nano** — Added **CDP Browser Automation** with multi-tab support (new_tab, switch_tab, close_tab, snapshot with refs), plus **Session Management** (create isolated sessions, switch, cron isolated mode).
 - **2026-02-17** 🎉 Released **v0.1.4** — MCP support, progress streaming, new providers, and multiple channel improvements. Please see [release notes](https://github.com/HKUDS/nanobot/releases/tag/v0.1.4) for details.
 - **2026-02-16** 🦞 nanobot now integrates a [ClawHub](https://clawhub.ai) skill — search and install public agent skills.
@@ -82,6 +83,31 @@
     <td align="center">Learn • Memory • Reasoning</td>
   </tr>
 </table>
+
+## 🔧 Tools
+
+nanobot has the following built-in tools:
+
+| Tool | Description |
+|------|-------------|
+| **read** | Read files from the filesystem |
+| **write** | Write content to files |
+| **edit** | Edit existing files |
+| **ls** | List directory contents |
+| **exec** | Execute shell commands |
+| **message** | Send messages to chat channels (Telegram, Discord, etc.) |
+| **browser** | CDP-based browser automation (open URLs, click, type, screenshot) |
+| **web_search** | Search the web using Brave Search |
+| **web_fetch** | Fetch and extract content from web pages |
+| **tavily_search** | Search using Tavily AI (better for news and current events) |
+| **image** | Analyze and understand images |
+| **generate_image** | Generate images using Google's Gemini API |
+| **cron** | Manage scheduled tasks (add, list, remove) |
+| **session** | Manage conversation sessions (create, switch, clear, delete) |
+| **spawn** | Spawn background subagents for complex tasks |
+| **mcp** | MCP tools (Model Context Protocol) |
+
+> Note: MCP tools are dynamically discovered from configured MCP servers.
 
 ## 📦 Install
 

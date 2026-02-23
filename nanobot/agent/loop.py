@@ -25,6 +25,7 @@ from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.agent.tools.tavily import TavilySearchTool
 from nanobot.agent.tools.image import ImageUnderstandTool
+from nanobot.agent.tools.image_generate import ImageGenerateTool
 from nanobot.agent.tools.browser import BrowserTool
 from nanobot.agent.tools.session import SessionTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
@@ -61,6 +62,7 @@ class AgentLoop:
         memory_window: int = 50,
         brave_api_key: str | None = None,
         tavily_api_key: str | None = None,
+        gemini_api_key: str | None = None,
         exec_config: ExecToolConfig | None = None,
         cron_service: CronService | None = None,
         restrict_to_workspace: bool = False,
@@ -80,6 +82,7 @@ class AgentLoop:
         self.memory_window = memory_window
         self.brave_api_key = brave_api_key
         self.tavily_api_key = tavily_api_key
+        self.gemini_api_key = gemini_api_key
         self.exec_config = exec_config or ExecToolConfig()
         self.media_config = media_config or MediaConfig()
         self.vision_api_key = vision_api_key
@@ -140,6 +143,10 @@ class AgentLoop:
 
         # Image understanding tool
         self.tools.register(ImageUnderstandTool(context_builder=self.context))
+        self.tools.register(ImageGenerateTool(
+            api_key=self.gemini_api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"),
+            workspace=str(self.workspace)
+        ))
 
         # Browser tool
         self.tools.register(BrowserTool(workspace=self.workspace))
@@ -231,9 +238,11 @@ class AgentLoop:
         # Add mandatory tool hint for browser-related requests
         browser_keywords = ["打开", "open", "navigate", "浏览", "search", "搜索", "搜", "website"]
         cron_keywords = ["定时", "cron", "reminder", "提醒", "schedule", "预约"]
+        image_keywords = ["画", "生成图像", "generate image", "生成图片", "画图", "draw", "create image", "生成一只", "画一只", "生成一张", "画一张"]
         browser_forced = any(kw in user_message.lower() for kw in browser_keywords)
         cron_forced = any(kw in user_message.lower() for kw in cron_keywords)
-        forced = browser_forced or cron_forced
+        image_forced = any(kw in user_message.lower() for kw in image_keywords)
+        forced = browser_forced or cron_forced or image_forced
         if browser_forced:
             # Add a system hint to force browser tool usage
             for msg in messages:
@@ -253,6 +262,16 @@ class AgentLoop:
             messages.append({
                 "role": "user",
                 "content": "IMPORTANT: You MUST use the cron tool to complete this request. Do not respond text-only - you must call the cron tool first."
+            })
+        if image_forced:
+            # Add a system hint to force image generation tool usage
+            for msg in messages:
+                if msg.get("role") == "system":
+                    msg["content"] += "\n\n[MANDATORY] You MUST use the generate_image tool to create images. Do NOT describe images textually - you MUST actually call the generate_image tool to generate and save the image."
+                    break
+            messages.append({
+                "role": "user",
+                "content": "IMPORTANT: You MUST use the generate_image tool to complete this request. Do not respond text-only - you must call the generate_image tool first."
             })
 
         iteration = 0
