@@ -310,6 +310,24 @@ class AgentLoop:
         # Reset tool call tracking at the start of each request
         self._reset_tool_tracking()
         
+        # Plan Mode: For complex tasks, encourage planning first
+        # Detect complex tasks: long messages or multi-step requests
+        is_complex_task = len(user_message) > 200 or any(kw in user_message for kw in [
+            "查一下", "看看", "找找", "分析", "帮我", "帮我查", "帮我找",
+            "check", "find", "search", "analyze", "look up", "research"
+        ])
+        
+        if is_complex_task and not forced:
+            # Add planning hint for complex tasks
+            for msg in messages:
+                if msg.get("role") == "system":
+                    msg["content"] += "\n\n[PLANNING MODE] For complex tasks, first think about the steps needed and output a brief plan before executing tools. Format: 'Plan: 1. ... 2. ... 3. ...' Then execute tools one by one."
+                    break
+            messages.append({
+                "role": "user",
+                "content": "For this complex task, please first output a brief plan, then execute tools to complete it."
+            })
+        
         iteration = 0
         final_content = None
         tools_used: list[str] = []
