@@ -383,9 +383,22 @@ class AgentLoop:
                         break
                     
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
-                    messages = self.context.add_tool_result(
-                        messages, tool_call.id, tool_call.name, result
-                    )
+                    
+                    # Tool Result Verification: Check for failure indicators
+                    result_lower = str(result).lower()
+                    failure_indicators = ["failed", "error", "exception", "timeout", "not found", "permission denied", "无法", "错误", "失败"]
+                    is_failure = any(indicator in result_lower for indicator in failure_indicators)
+                    
+                    if is_failure:
+                        # Add a hint to force the model to handle the failure
+                        failure_hint = f"\n\n[TOOL RESULT VERIFICATION] The tool returned an error/failure: {result[:200]}. You MUST either: (1) Try a different approach, or (2) Admit the failure to the user. Do NOT pretend the tool succeeded!"
+                        messages = self.context.add_tool_result(
+                            messages, tool_call.id, tool_call.name, result + failure_hint
+                        )
+                    else:
+                        messages = self.context.add_tool_result(
+                            messages, tool_call.id, tool_call.name, result
+                        )
                 
                 # If loop was detected and we broke out of the tool loop, exit the main loop too
                 if final_content and "LOOP DETECTED" in final_content:
