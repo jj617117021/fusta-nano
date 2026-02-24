@@ -341,7 +341,7 @@ class AgentLoop:
                     break
             messages.append({
                 "role": "user",
-                "content": "For this complex task, please first output a **Plan** with clear step names, then execute each step and mark them as [x] when done."
+                "content": "For this complex task, please first output a **Plan** with clear step names, then execute each step."
             })
             self._has_plan = True
         
