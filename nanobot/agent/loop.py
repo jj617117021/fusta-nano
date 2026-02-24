@@ -337,7 +337,7 @@ class AgentLoop:
             # Add planning hint for complex tasks (works with or without forced tools)
             for msg in messages:
                 if msg.get("role") == "system":
-                    msg["content"] += "\n\n[PLANNING MODE] For complex tasks, first think about the steps needed and output a brief plan with clear step names."
+                    msg["content"] += "\n\n[PLANNING MODE] For complex tasks, first think about the steps needed and output a brief plan with clear step names:\n\n**Plan:**\n- [ ] **Step 1**: 具体步骤描述\n- [ ] **Step 2**: 具体步骤描述\n- [ ] **Step 3**: 具体步骤描述"
                     break
             messages.append({
                 "role": "user",
