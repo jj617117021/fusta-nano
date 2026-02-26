@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -122,12 +123,13 @@ class SubagentManager:
                 {"role": "user", "content": task},
             ]
             
-            # Run agent loop (limited iterations)
-            max_iterations = 15
+            # Run agent loop (time-limited, default 10 minutes)
+            max_task_duration = 600
             iteration = 0
+            start_time = time.time()
             final_result: str | None = None
-            
-            while iteration < max_iterations:
+
+            while time.time() - start_time < max_task_duration:
                 iteration += 1
                 
                 response = await self.provider.chat(

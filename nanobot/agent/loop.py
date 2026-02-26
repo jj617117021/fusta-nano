@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
@@ -56,7 +57,7 @@ class AgentLoop:
         provider: LLMProvider,
         workspace: Path,
         model: str | None = None,
-        max_iterations: int = 20,
+        max_task_duration: int = 600,  # seconds (default 10 minutes)
         temperature: float = 0.7,
         max_tokens: int = 4096,
         memory_window: int = 50,
@@ -76,7 +77,7 @@ class AgentLoop:
         self.provider = provider
         self.workspace = workspace
         self.model = model or provider.get_default_model()
-        self.max_iterations = max_iterations
+        self.max_task_duration = max_task_duration
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.memory_window = memory_window
@@ -110,6 +111,7 @@ class AgentLoop:
         self._mcp_connected = False
         self._mcp_connecting = False
         self._consolidating: set[str] = set()  # Session keys with consolidation in progress
+        self._halt_requested = False  # Flag for /halt command
         self._register_default_tools()
 
     def _register_default_tools(self) -> None:
@@ -346,11 +348,19 @@ class AgentLoop:
             self._has_plan = True
         
         iteration = 0
+        start_time = time.time()
+        self._halt_requested = False  # Reset halt flag at start
         final_content = None
         tools_used: list[str] = []
         text_only_retried = False
 
-        while iteration < self.max_iterations:
+        while time.time() - start_time < self.max_task_duration:
+            # Check for halt request
+            if self._halt_requested:
+                logger.info("Halt requested, stopping agent loop")
+                self._halt_requested = False
+                break
+
             iteration += 1
 
             response = await self.provider.chat(
@@ -416,7 +426,21 @@ class AgentLoop:
                         messages = self.context.add_tool_result(
                             messages, tool_call.id, tool_call.name, result
                         )
-                    
+
+                    # Check for halt in queue (non-blocking) - allows /halt to interrupt long-running tasks
+                    try:
+                        msg = self.bus.inbound.get_nowait()
+                        if msg.content.strip().lower() == "/halt":
+                            self._halt_requested = True
+                            self.bus.inbound.put_nowait(msg)  # Put back for normal processing
+                            logger.info("Halt detected from queue")
+                        else:
+                            self.bus.inbound.put_nowait(msg)
+                    except asyncio.QueueEmpty:
+                        pass  # No message waiting
+                    except Exception:
+                        pass  # Ignore errors
+
                     # Plan Adherence Check removed - let model handle final progress display
                 
                 # If loop was detected and we broke out of the tool loop, exit the main loop too
@@ -447,6 +471,18 @@ class AgentLoop:
                     self.bus.consume_inbound(),
                     timeout=1.0
                 )
+
+                # Check for /halt command BEFORE processing (can interrupt current task)
+                cmd = msg.content.strip().lower()
+                if cmd == "/halt":
+                    self._halt_requested = True
+                    await self.bus.publish_outbound(OutboundMessage(
+                        channel=msg.channel,
+                        chat_id=msg.chat_id,
+                        content="🛑 Task halted. Waiting for next instruction."
+                    ))
+                    continue  # Skip normal message processing
+
                 try:
                     response = await self._process_message(msg)
                     await self.bus.publish_outbound(response or OutboundMessage(
@@ -522,7 +558,11 @@ class AgentLoop:
                                   content="New session started. Memory consolidation in progress.")
         if cmd == "/help":
             return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id,
-                                  content="🐈 nanobot commands:\n/new — Start a new conversation\n/help — Show available commands")
+                                  content="🐈 nanobot commands:\n/new — Start a new conversation\n/halt — Stop current task immediately\n/help — Show available commands")
+        if cmd == "/halt":
+            self._halt_requested = True
+            return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id,
+                                  content="🛑 Task halted. Waiting for next instruction.")
 
         if len(session.messages) > self.memory_window and session.key not in self._consolidating:
             self._consolidating.add(session.key)
