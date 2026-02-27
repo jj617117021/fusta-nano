@@ -19,8 +19,8 @@ Automates browser interactions using browser-use CLI with your real Chrome profi
 | Need | Action | Example |
 |------|--------|---------|
 | Click button/link | click + index | `{"action": "click", "index": 5}` |
+| **Select dropdown option (DO NOT use click)** | **select + index + option** | **`{"action": "select", "index": 2, "option": "Beijing"}`** |
 | Type in input | input + index + text | `{"action": "input", "index": 3, "text": "hello"}` |
-| Select dropdown | select + index + option | `{"action": "select", "index": 2, "option": "Beijing"}` |
 | Checkbox (tricky) | eval + JS | `{"action": "eval", "code": "document.querySelector('#agree').checked = true"}` |
 | Hover element | hover + index | `{"action": "hover", "index": 1}` |
 | Press keyboard | keys + keys | `{"action": "keys", "keys": "Enter"}` |
@@ -114,6 +114,7 @@ Use `get` to extract page/element data:
 2. **Sessions persist** - Browser stays open between commands, preserving login state
 3. **Element not found?** - Scroll down and run `state` again to refresh element list
 4. **Checkbox problems?** - Use `eval` with JavaScript instead of `click`
+5. **For dropdowns: use `select` NEVER `click`** - The `select` action handles clicking the dropdown and selecting the option automatically. Do NOT try to click the dropdown first!
 
 ## Troubleshooting
 
