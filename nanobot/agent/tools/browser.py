@@ -26,8 +26,14 @@ class BrowserTool(Tool):
 - state - Get clickable elements with indices
 - click: {"index": 1} - Click element by index
 - input: {"index": 1, "text": "hello"} - Click and type
+- select: {"index": 1, "option": "value"} - Select dropdown option
+- hover: {"index": 1} - Hover over element
+- keys: {"keys": "Enter"} - Send keyboard keys
+- wait: {"target": ".button", "type": "selector"} - Wait for element
 - screenshot - Take screenshot
 - close - Close browser
+- scroll - Scroll
+- back - Go back
 
 **Workflow:**
 1. browser({"action": "open", "url": "https://xiaohongshu.com"})
@@ -43,7 +49,7 @@ class BrowserTool(Tool):
     async def execute(self, action: str, **kwargs) -> str:
         """Execute a browser action using browser-use CLI."""
         try:
-            cmd = [BROWSER_USE_CMD, "--browser", "real", "--headed"]
+            cmd = [BROWSER_USE_CMD, "--session", "nanobot", "--browser", "real", "--profile", "Default", "--headed"]
 
             if action == "open":
                 url = kwargs.get("url", "")
@@ -77,8 +83,35 @@ class BrowserTool(Tool):
             elif action == "back":
                 cmd.append("back")
 
+            elif action == "select":
+                index = kwargs.get("index", 0)
+                option = kwargs.get("option", "")
+                if not option:
+                    return "Error: option is required for select"
+                cmd.extend(["select", str(index), option])
+
+            elif action == "wait":
+                wait_type = kwargs.get("type", "selector")
+                target = kwargs.get("target", "")
+                if not target:
+                    return "Error: target is required for wait"
+                if wait_type == "text":
+                    cmd.extend(["wait", "text", target])
+                else:
+                    cmd.extend(["wait", "selector", target])
+
+            elif action == "keys":
+                keys = kwargs.get("keys", "")
+                if not keys:
+                    return "Error: keys is required"
+                cmd.extend(["keys", keys])
+
+            elif action == "hover":
+                index = kwargs.get("index", 0)
+                cmd.extend(["hover", str(index)])
+
             else:
-                return f"Unknown action: {action}. Use: open, state, click, input, screenshot, close, scroll, back"
+                return f"Unknown action: {action}. Use: open, state, click, input, screenshot, close, scroll, back, select, wait, keys, hover"
 
             # Run CLI command
             proc = await asyncio.create_subprocess_exec(
@@ -103,11 +136,15 @@ class BrowserTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["open", "state", "click", "input", "screenshot", "close", "scroll", "back"]
+                    "enum": ["open", "state", "click", "input", "select", "hover", "keys", "wait", "screenshot", "close", "scroll", "back"]
                 },
                 "url": {"type": "string", "description": "URL to open"},
                 "index": {"type": "integer", "description": "Element index from state"},
                 "text": {"type": "string", "description": "Text to input"},
+                "option": {"type": "string", "description": "Option text to select from dropdown"},
+                "keys": {"type": "string", "description": "Keyboard keys (e.g., Enter, Control+a)"},
+                "target": {"type": "string", "description": "Target selector or text to wait for"},
+                "type": {"type": "string", "enum": ["selector", "text"], "description": "Wait type"},
                 "direction": {"type": "string", "enum": ["up", "down"], "description": "Scroll direction"},
             },
             "required": ["action"]
