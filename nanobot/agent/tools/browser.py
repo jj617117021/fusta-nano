@@ -34,6 +34,8 @@ class BrowserTool(Tool):
 - close - Close browser
 - scroll - Scroll
 - back - Go back
+- eval: {"code": "document.title"} - Execute JavaScript
+- get: {"what": "title"} - Get page/element data
 
 **Workflow:**
 1. browser({"action": "open", "url": "https://xiaohongshu.com"})
@@ -110,8 +112,24 @@ class BrowserTool(Tool):
                 index = kwargs.get("index", 0)
                 cmd.extend(["hover", str(index)])
 
+            elif action == "eval":
+                code = kwargs.get("code", "")
+                if not code:
+                    return "Error: code is required for eval"
+                cmd.extend(["eval", code])
+
+            elif action == "get":
+                what = kwargs.get("what", "title")
+                index = kwargs.get("index")
+                if what in ["text", "value", "attributes", "bbox"]:
+                    if index is None:
+                        return "Error: index is required for get text/value/attributes/bbox"
+                    cmd.extend([what, str(index)])
+                else:
+                    cmd.extend([what])
+
             else:
-                return f"Unknown action: {action}. Use: open, state, click, input, screenshot, close, scroll, back, select, wait, keys, hover"
+                return f"Unknown action: {action}. Use: open, state, click, input, screenshot, close, scroll, back, select, wait, keys, hover, eval, get"
 
             # Run CLI command
             proc = await asyncio.create_subprocess_exec(
@@ -136,7 +154,7 @@ class BrowserTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["open", "state", "click", "input", "select", "hover", "keys", "wait", "screenshot", "close", "scroll", "back"]
+                    "enum": ["open", "state", "click", "input", "select", "hover", "keys", "wait", "screenshot", "close", "scroll", "back", "eval", "get"]
                 },
                 "url": {"type": "string", "description": "URL to open"},
                 "index": {"type": "integer", "description": "Element index from state"},
@@ -146,6 +164,8 @@ class BrowserTool(Tool):
                 "target": {"type": "string", "description": "Target selector or text to wait for"},
                 "type": {"type": "string", "enum": ["selector", "text"], "description": "Wait type"},
                 "direction": {"type": "string", "enum": ["up", "down"], "description": "Scroll direction"},
+                "code": {"type": "string", "description": "JavaScript code to execute"},
+                "what": {"type": "string", "enum": ["title", "html", "text", "value", "attributes", "bbox"], "description": "What to get: title, html, text, value, attributes, bbox"},
             },
             "required": ["action"]
         }
