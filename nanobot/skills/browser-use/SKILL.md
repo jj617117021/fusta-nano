@@ -21,7 +21,7 @@ Automates browser interactions using browser-use CLI with your real Chrome profi
 | Click button/link | click + index | `{"action": "click", "index": 5}` |
 | **Select dropdown option (DO NOT use click)** | **select + index + option** | **`{"action": "select", "index": 2, "option": "Beijing"}`** |
 | Type in input | input + index + text | `{"action": "input", "index": 3, "text": "hello"}` |
-| Checkbox (tricky) | eval + JS (CLICK not just set) | `{"action": "eval", "code": "document.querySelector('#agree').click()"}` |
+| Check/Uncheck checkbox | check/uncheck + index | `{"action": "check", "index": 0}` or `{"action": "uncheck", "index": 0}` |
 | Hover element | hover + index | `{"action": "hover", "index": 1}` |
 | Press keyboard | keys + keys | `{"action": "keys", "keys": "Enter"}` |
 | Wait for element | wait + target + type | `{"action": "wait", "target": ".loading", "type": "selector"}` |
@@ -36,11 +36,21 @@ Automates browser interactions using browser-use CLI with your real Chrome profi
 
 ## All Available Actions
 
-`open`, `state`, `click`, `input`, `select`, `hover`, `keys`, `wait`, `screenshot`, `close`, `scroll`, `back`, `eval`, `get`
+`open`, `state`, `click`, `input`, `select`, `hover`, `keys`, `wait`, `screenshot`, `close`, `scroll`, `back`, `eval`, `get`, `check`, `uncheck`
 
 ## Checkbox & Complex Interactions
 
-Standard `click` may not work reliably for checkboxes. Use `eval` with JavaScript:
+**Recommended: Use built-in `check` and `uncheck` actions** (like OpenClaw's agent-browser):
+
+```python
+# Check a checkbox by index
+{"action": "check", "index": 0}
+
+# Uncheck a checkbox by index
+{"action": "uncheck", "index": 0}
+```
+
+These actions properly trigger the click event (not just set .checked property).
 
 **IMPORTANT: Use .click() NOT just .checked = true**
 Setting `.checked = true` doesn't trigger the events LinkedIn expects. Use `.click()` instead:

@@ -23,7 +23,7 @@ class BrowserTool(Tool):
 
 **Workflow:** open URL → state (get elements) → click/input using index
 
-**Actions:** open, state, click, input, select, hover, keys, wait, screenshot, close, scroll, back, eval, get
+**Actions:** open, state, click, input, select, hover, keys, wait, screenshot, close, scroll, back, eval, get, check, uncheck
 
 See browser-use skill (always loaded) for detailed usage guide."""
 
@@ -110,8 +110,20 @@ See browser-use skill (always loaded) for detailed usage guide."""
                 else:
                     cmd.extend([what])
 
+            elif action == "check":
+                index = kwargs.get("index", 0)
+                # Use eval with .click() to properly trigger checkbox events
+                code = f"document.querySelectorAll('input[type=checkbox]')[{index}]?.click()"
+                cmd.extend(["eval", code])
+
+            elif action == "uncheck":
+                index = kwargs.get("index", 0)
+                # Use eval with .click() to properly trigger checkbox events
+                code = f"document.querySelectorAll('input[type=checkbox]')[{index}]?.click()"
+                cmd.extend(["eval", code])
+
             else:
-                return f"Unknown action: {action}. Use: open, state, click, input, screenshot, close, scroll, back, select, wait, keys, hover, eval, get"
+                return f"Unknown action: {action}. Use: open, state, click, input, screenshot, close, scroll, back, select, wait, keys, hover, eval, get, check, uncheck"
 
             # Run CLI command
             proc = await asyncio.create_subprocess_exec(
@@ -136,7 +148,7 @@ See browser-use skill (always loaded) for detailed usage guide."""
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["open", "state", "click", "input", "select", "hover", "keys", "wait", "screenshot", "close", "scroll", "back", "eval", "get"]
+                    "enum": ["open", "state", "click", "input", "select", "hover", "keys", "wait", "screenshot", "close", "scroll", "back", "eval", "get", "check", "uncheck"]
                 },
                 "url": {"type": "string", "description": "URL to open"},
                 "index": {"type": "integer", "description": "Element index from state"},
