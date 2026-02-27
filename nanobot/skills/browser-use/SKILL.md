@@ -21,7 +21,7 @@ Automates browser interactions using browser-use CLI with your real Chrome profi
 | Click button/link | click + index | `{"action": "click", "index": 5}` |
 | **Select dropdown option (DO NOT use click)** | **select + index + option** | **`{"action": "select", "index": 2, "option": "Beijing"}`** |
 | Type in input | input + index + text | `{"action": "input", "index": 3, "text": "hello"}` |
-| Checkbox (tricky) | eval + JS | `{"action": "eval", "code": "document.querySelector('#agree').checked = true"}` |
+| Checkbox (tricky) | eval + JS (CLICK not just set) | `{"action": "eval", "code": "document.querySelector('#agree').click()"}` |
 | Hover element | hover + index | `{"action": "hover", "index": 1}` |
 | Press keyboard | keys + keys | `{"action": "keys", "keys": "Enter"}` |
 | Wait for element | wait + target + type | `{"action": "wait", "target": ".loading", "type": "selector"}` |
@@ -42,15 +42,21 @@ Automates browser interactions using browser-use CLI with your real Chrome profi
 
 Standard `click` may not work reliably for checkboxes. Use `eval` with JavaScript:
 
-```python
-# Check a checkbox by ID
-{"action": "eval", "code": "document.querySelector('#agree').checked = true"}
+**IMPORTANT: Use .click() NOT just .checked = true**
+Setting `.checked = true` doesn't trigger the events LinkedIn expects. Use `.click()` instead:
 
-# Check a checkbox by selector
-{"action": "eval", "code": "document.querySelectorAll('input[type=checkbox]')[0].checked = true"}
+```python
+# Check a checkbox by ID - USE CLICK
+{"action": "eval", "code": "document.querySelector('#agree').click()"}
+
+# Check by selector - USE CLICK
+{"action": "eval", "code": "document.querySelectorAll('input[type=checkbox]')[0].click()"}
+
+# Alternative: dispatch proper click event
+{"action": "eval", "code": "document.querySelector('#agree').dispatchEvent(new MouseEvent('click', {bubbles: true}))"}
 
 # Uncheck
-{"action": "eval", "code": "document.querySelector('#checkbox').checked = false"}
+{"action": "eval", "code": "document.querySelector('#checkbox').click()"}
 ```
 
 ## Data Extraction
@@ -113,7 +119,7 @@ Use `get` to extract page/element data:
 1. **ALWAYS run `state` first** - See available elements and their indices before interacting
 2. **Sessions persist** - Browser stays open between commands, preserving login state
 3. **Element not found?** - Scroll down and run `state` again to refresh element list
-4. **Checkbox problems?** - Use `eval` with JavaScript instead of `click`
+4. **Checkbox problems?** - Use `eval` with `.click()` NOT `.checked = true` (must trigger actual click event!)
 5. **For dropdowns: use `select` NEVER `click`** - The `select` action handles clicking the dropdown and selecting the option automatically. Do NOT try to click the dropdown first!
 
 ## Troubleshooting
