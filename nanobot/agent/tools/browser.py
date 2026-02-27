@@ -21,44 +21,11 @@ class BrowserTool(Tool):
     name = "browser"
     description = """Browser automation using browser-use CLI with real Chrome profile.
 
-**IMPORTANT - Always follow this workflow:**
-1. browser({"action": "open", "url": "https://..."}) - Open URL first
-2. browser({"action": "state"}) - Get clickable elements with indices (ALWAYS do this before clicking/typing)
-3. Use the index numbers from state to interact with elements
+**Workflow:** open URL → state (get elements) → click/input using index
 
-**When to use what:**
+**Actions:** open, state, click, input, select, hover, keys, wait, screenshot, close, scroll, back, eval, get
 
-| Scenario | Action | Example |
-|----------|--------|---------|
-| Click button/link | click + index | {"action": "click", "index": 5} |
-| Type in input field | input + index + text | {"action": "input", "index": 3, "text": "hello"} |
-| Select dropdown option | select + index + option | {"action": "select", "index": 2, "option": "Beijing"} |
-| Checkbox/Radio button | eval + JS | {"action": "eval", "code": "document.querySelectorAll('input[type=checkbox]')[0].click()"} |
-| Hover over element | hover + index | {"action": "hover", "index": 1} |
-| Press keyboard | keys + keys | {"action": "keys", "keys": "Enter"} |
-| Wait for element | wait + target + type | {"action": "wait", "target": ".loading", "type": "selector"} |
-| Scroll down/up | scroll + direction | {"action": "scroll", "direction": "down"} |
-| Go back | back | {"action": "back"} |
-| Take screenshot | screenshot | {"action": "screenshot"} |
-| Get page title | get + what: title | {"action": "get", "what": "title"} |
-| Get element text | get + what: text + index | {"action": "get", "what": "text", "index": 0} |
-| Get input value | get + what: value + index | {"action": "get", "what": "value", "index": 3} |
-| Get element attributes | get + what: attributes + index | {"action": "get", "what": "attributes", "index": 2} |
-| Execute JavaScript | eval + code | {"action": "eval", "code": "document.cookie"} |
-| Close browser | close | {"action": "close"} |
-
-**Checkbox/Complex interactions:**
-- Use eval to interact with checkboxes when click doesn't work
-- Example: {"action": "eval", "code": "document.querySelector('#agree').checked = true"}
-
-**All available actions:**
-open, state, click, input, select, hover, keys, wait, screenshot, close, scroll, back, eval, get
-
-**Workflow example:**
-1. browser({"action": "open", "url": "https://example.com"})
-2. browser({"action": "state"}) - See elements [0] button, [1] input, [2] dropdown
-3. browser({"action": "click", "index": 1}) - Click the input
-4. browser({"action": "input", "index": 1, "text": "search term"})"""
+See browser-use skill (always loaded) for detailed usage guide."""
 
     def __init__(self, workspace: Path):
         self.workspace = workspace
