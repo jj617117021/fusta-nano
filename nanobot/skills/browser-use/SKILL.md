@@ -18,6 +18,8 @@ Automates browser interactions using browser-use CLI with your real Chrome profi
 
 | Need | Action | Example |
 |------|--------|---------|
+| **Smart click (RECOMMENDED)** | smart_click + ref | `{"action": "smart_click", "ref": "e5"}` |
+| **Smart input (RECOMMENDED)** | smart_input + ref + text | `{"action": "smart_input", "ref": "e3", "text": "hello"}` |
 | Click button/link | click + index | `{"action": "click", "index": 5}` |
 | **Select dropdown option (DO NOT use click)** | **select + index + option** | **`{"action": "select", "index": 2, "option": "Beijing"}`** |
 | Type in input | input + index + text | `{"action": "input", "index": 3, "text": "hello"}` |
@@ -36,7 +38,44 @@ Automates browser interactions using browser-use CLI with your real Chrome profi
 
 ## All Available Actions
 
-`open`, `state`, `click`, `input`, `select`, `hover`, `keys`, `wait`, `screenshot`, `close`, `scroll`, `back`, `eval`, `get`, `check`, `uncheck`
+**Basic:** `open`, `state`, `click`, `input`, `select`, `hover`, `keys`, `wait`, `screenshot`, `close`, `scroll`, `back`, `eval`, `get`, `check`, `uncheck`
+
+**Advanced (Playwright-powered - MORE RELIABLE):**
+- `smart_click` - Click with auto-retry (USE THIS for buttons/links)
+- `smart_input` - Input with better targeting (USE THIS for text fields)
+- `find` - Semantic locators by role/text/label
+
+## Advanced Actions (Playwright-powered)
+
+For complex elements, use these Playwright-powered actions:
+
+```python
+# Smart click - auto-retry if fails, scroll to element
+{"action": "smart_click", "ref": "e5"}
+
+# Smart input - better targeting for text fields
+{"action": "smart_input", "ref": "e3", "text": "hello"}
+
+# Find by semantic locators
+{"action": "find", "strategy": "role", "value": "button", "action": "click", "name": "Submit"}
+{"action": "find", "strategy": "text", "value": "Sign In", "action": "click"}
+{"action": "find", "strategy": "label", "value": "Email", "action": "fill", "text": "user@test.com"}
+```
+
+**Note:** Use `e1`, `e2`, `e3` format for refs (not just numbers like `1`, `2`).
+
+## Complex Form Elements
+
+**For Combo Boxes / Autocomplete:**
+- Use `smart_input` instead of basic `input`
+- Or use `find` with label strategy
+
+**For Radio Buttons:**
+- Use `smart_click` instead of basic `click`
+
+**For Checkboxes:**
+- Use built-in `check` / `uncheck` actions
+- Or use `smart_click`
 
 ## Checkbox & Complex Interactions
 

@@ -4,6 +4,8 @@ import asyncio
 import json
 from typing import Any
 
+from loguru import logger
+
 
 class PlaywrightClient:
     """Playwright-based browser client that connects to browser via CDP.
@@ -170,7 +172,7 @@ class PlaywrightClient:
 
                 # 如果 ARIA 捕获太少，回退到 DOM
                 if aria_link_count < 10:
-                    print(f"[Playwright] ARIA snapshot only captured {aria_link_count} links, using DOM instead")
+                    logger.warning(f"[Playwright] ARIA snapshot only captured {aria_link_count} links, using DOM instead")
                     return await self.get_snapshot_dom(max_nodes)
             else:
                 return await self.get_snapshot_dom(max_nodes)
@@ -404,13 +406,45 @@ class PlaywrightClient:
                 except Exception as e:
                     pass
 
-            return {"error": f"Could not click element {ref}"}
+            return {"error": f"Could not click element {ref}", "reason": "all_strategies_failed"}
 
         except Exception as e:
-            return {"error": f"Click failed: {e}"}
+            return {"error": f"Click failed: {e}", "reason": "exception"}
 
-    async def type_by_ref(self, ref: str, text: str) -> dict:
-        """Type text into an element by ref - 使用 getByRole."""
+    async def click_with_retry(self, ref: str, max_retries: int = 2, highlight: bool = True) -> dict:
+        """Click with retry - 失败后滚动页面再重试，提升稳定性.
+
+        Args:
+            ref: Element reference (e.g., 'e1')
+            max_retries: Maximum number of retry attempts
+            highlight: Whether to highlight the element before clicking
+        """
+        # 高亮元素
+        if highlight:
+            await self.highlight_element(ref, duration=2.0)
+
+        for attempt in range(max_retries):
+            result = await self.click_by_ref(ref)
+
+            if result.get("success"):
+                return result
+
+            # 如果失败，滚动后再试
+            if attempt < max_retries - 1:
+                await self.scroll(0, 300)
+                await asyncio.sleep(1)
+
+        # 最后一次尝试也失败，返回详细错误
+        return result
+
+    async def type_by_ref(self, ref: str, text: str, highlight: bool = True) -> dict:
+        """Type text into an element by ref - 使用 getByRole.
+
+        Args:
+            ref: Element reference (e.g., 'e1')
+            text: Text to type
+            highlight: Whether to highlight the element before typing
+        """
         if not self.is_connected:
             return {"error": "Not connected"}
 
@@ -418,6 +452,10 @@ class PlaywrightClient:
             # Parse ref
             if not ref.startswith('e'):
                 return {"error": f"Invalid ref format: {ref}"}
+
+            # 高亮元素
+            if highlight:
+                await self.highlight_element(ref, duration=2.0)
 
             # Get snapshot if needed
             if not self._ref_map:
@@ -494,6 +532,71 @@ class PlaywrightClient:
 
         except Exception as e:
             return {"error": f"Hover failed: {e}"}
+
+    async def find_element(self, strategy: str, value: str, action: str = None, **kwargs) -> dict:
+        """语义定位器支持 - 类似 agent-browser 的 find 命令.
+
+        支持的策略:
+        - role: find role button click --name "Submit"
+        - text: find text "Sign In" click
+        - label: find label "Email" fill "user@test.com"
+        - first: find first ".item" click
+        - nth: find nth 2 "a" text
+        """
+        if not self.is_connected:
+            return {"error": "Not connected"}
+
+        try:
+            locator = None
+
+            if strategy == "role":
+                role = value
+                name = kwargs.get("name", "")
+                if name:
+                    locator = self.page.get_by_role(role, name=name)
+                else:
+                    locator = self.page.get_by_role(role)
+
+            elif strategy == "text":
+                locator = self.page.get_by_text(value, exact=False)
+
+            elif strategy == "label":
+                locator = self.page.get_by_label(value, exact=False)
+
+            elif strategy == "first":
+                locator = self.page.locator(value).first
+
+            elif strategy == "nth":
+                index = int(kwargs.get("index", 0))
+                locator = self.page.locator(value).nth(index)
+
+            else:
+                return {"error": f"Unknown strategy: {strategy}"}
+
+            if not locator:
+                return {"error": f"Could not find element with strategy {strategy}"}
+
+            # 执行操作
+            if action == "click":
+                await locator.click(force=True, timeout=5000)
+                await asyncio.sleep(1)
+                return {"success": True, "strategy": strategy, "action": action}
+            elif action == "fill":
+                text = kwargs.get("text", "")
+                await locator.fill(text)
+                return {"success": True, "strategy": strategy, "action": action}
+            elif action == "text":
+                text = await locator.text_content()
+                return {"success": True, "text": text}
+            elif action == "hover":
+                await locator.hover()
+                return {"success": True, "strategy": strategy, "action": action}
+            else:
+                # 没有指定操作，返回 locator
+                return {"success": True, "strategy": strategy, "action": "found"}
+
+        except Exception as e:
+            return {"error": f"Find failed: {e}"}
 
     async def evaluate(self, expression: str) -> dict:
         """Execute JavaScript in page context."""
@@ -615,6 +718,94 @@ class PlaywrightClient:
 
         except Exception as e:
             return {"error": f"DOM snapshot failed: {e}"}
+
+    async def highlight_element(self, ref: str, duration: float = 2.0, color: str = "#ff0000") -> dict:
+        """Highlight an element by ref with a colored border.
+
+        Args:
+            ref: Element reference (e.g., 'e1')
+            duration: How long to keep the highlight (seconds)
+            color: Border color (CSS color or hex)
+
+        Returns:
+            {"success": True, "ref": ref}
+        """
+        if not self.is_connected:
+            return {"error": "Not connected"}
+
+        try:
+            # Get element info from ref_map
+            if not self._ref_map or ref not in self._ref_map:
+                logger.warning(f"[Playwright] highlight: ref {ref} not in _ref_map, trying to get snapshot")
+                await self.get_snapshot()
+
+            if ref not in self._ref_map:
+                return {"error": f"Element {ref} not found in ref_map"}
+
+            info = self._ref_map[ref]
+            role = info.get('role', '')
+            name = info.get('name', '')
+            nth = info.get('nth', 0)
+
+            # Build JavaScript to highlight element
+            js_code = f"""
+            async () => {{
+                // Find element by role and name
+                const role = "{role}";
+                const name = "{name}";
+                const nth = {nth};
+
+                let element = null;
+                if (role && name) {{
+                    const candidates = Array.from(document.querySelectorAll('[role="' + role + '"]')).filter(el => {{
+                        const label = el.getAttribute('aria-label') || el.textContent || '';
+                        return label.includes("{name}") || el.getAttribute('name') === "{name}";
+                    }});
+                    if (candidates.length > nth) {{
+                        element = candidates[nth];
+                    }}
+                }}
+
+                // Fallback: try to find by text content
+                if (!element && name) {{
+                    const texts = Array.from(document.querySelectorAll('button, a, [role="button"], [role="link"]'));
+                    const matches = texts.filter(el => el.textContent.includes("{name}"));
+                    if (matches.length > nth) {{
+                        element = matches[nth];
+                    }}
+                }}
+
+                if (!element) {{
+                    return {{ error: 'Element not found for highlighting' }};
+                }}
+
+                // Apply highlight style
+                const originalOutline = element.style.outline;
+                const originalBoxShadow = element.style.boxShadow;
+                element.style.outline = '3px solid {color}';
+                element.style.boxShadow = '0 0 10px {color}';
+                element.style.zIndex = '999999';
+                element.style.position = 'relative';
+
+                // Remove highlight after duration
+                setTimeout(() => {{
+                    element.style.outline = originalOutline;
+                    element.style.boxShadow = originalBoxShadow;
+                    element.style.zIndex = '';
+                    element.style.position = '';
+                }}, {duration * 1000});
+
+                return {{ success: true, tag: element.tagName }};
+            }}
+            """
+
+            result = await self.page.evaluate(js_code)
+            logger.info(f"[Playwright] highlighted element {ref}: {result}")
+            return {"success": True, "ref": ref, "result": result}
+
+        except Exception as e:
+            logger.error(f"[Playwright] highlight failed: {e}")
+            return {"error": str(e)}
 
     async def scroll(self, x: int = 0, y: int = 0) -> dict:
         """Scroll the page."""
@@ -886,18 +1077,82 @@ class PlaywrightClient:
             return {"error": str(e)}
 
     async def get_console_messages(self) -> dict:
-        """Get console messages."""
+        """Get console messages from the page."""
         if not self.is_connected:
             return {"error": "Not connected"}
 
-        # Playwright doesn't have direct console access like CDP
-        # Return empty messages
-        return {"success": True, "messages": []}
+        try:
+            # 使用 JavaScript 获取控制台消息
+            messages = await self.page.evaluate("""
+                (function() {
+                    if (window.__console_messages) {
+                        return window.__console_messages;
+                    }
+                    return [];
+                })()
+            """)
+            return {"success": True, "messages": messages if messages else []}
+        except Exception as e:
+            return {"success": True, "messages": [], "note": str(e)}
 
     async def get_errors(self) -> dict:
-        """Get page errors."""
+        """Get page errors from console."""
         if not self.is_connected:
             return {"error": "Not connected"}
 
-        # Playwright handles errors differently
-        return {"success": True, "errors": []}
+        try:
+            # 获取 JavaScript 错误
+            errors = await self.page.evaluate("""
+                (function() {
+                    return window.__js_errors || [];
+                })()
+            """)
+            return {"success": True, "errors": errors if errors else []}
+        except Exception as e:
+            return {"success": True, "errors": [], "note": str(e)}
+
+    async def enable_console_logging(self) -> dict:
+        """启用控制台日志捕获 - 用于调试."""
+        if not self.is_connected:
+            return {"error": "Not connected"}
+
+        try:
+            # 注入 JavaScript 来捕获控制台消息
+            await self.page.evaluate("""
+                (function() {
+                    window.__console_messages = [];
+                    window.__js_errors = [];
+
+                    // 捕获 console.log, console.warn, console.error
+                    ['log', 'warn', 'error', 'info'].forEach(function(method) {
+                        var original = console[method];
+                        console[method] = function() {
+                            window.__console_messages.push({
+                                type: method,
+                                args: Array.from(arguments).map(function(a) {
+                                    try {
+                                        return typeof a === 'object' ? JSON.stringify(a) : String(a);
+                                    } catch(e) { return String(a); }
+                                }),
+                                timestamp: Date.now()
+                            });
+                            original.apply(console, arguments);
+                        };
+                    });
+
+                    // 捕获 JS 错误
+                    window.onerror = function(msg, url, line, col, error) {
+                        window.__js_errors.push({
+                            message: msg,
+                            url: url,
+                            line: line,
+                            col: col,
+                            timestamp: Date.now()
+                        });
+                        return false;
+                    };
+                })()
+            """)
+            return {"success": True, "message": "Console logging enabled"}
+        except Exception as e:
+            return {"error": str(e)}

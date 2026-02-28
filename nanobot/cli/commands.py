@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
 from rich.text import Text
+from loguru import logger
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
@@ -20,6 +21,17 @@ from prompt_toolkit.patch_stdout import patch_stdout
 
 from nanobot import __version__, __logo__
 from nanobot.config.schema import Config
+
+# Configure loguru to write to file
+_log_dir = Path.home() / ".nanobot" / "logs"
+_log_dir.mkdir(parents=True, exist_ok=True)
+logger.add(
+    _log_dir / "nanobot.log",
+    rotation="10 MB",
+    retention="7 days",
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+)
 
 app = typer.Typer(
     name="nanobot",
