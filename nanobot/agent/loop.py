@@ -57,7 +57,7 @@ class AgentLoop:
         provider: LLMProvider,
         workspace: Path,
         model: str | None = None,
-        max_task_duration: int = 600,  # seconds (default 10 minutes)
+        max_task_duration: int = 900,  # seconds (default 15 minutes)
         temperature: float = 0.7,
         max_tokens: int = 4096,
         memory_window: int = 50,

@@ -189,7 +189,7 @@ class AgentDefaults(Base):
     model: str = "anthropic/claude-opus-4-5"
     max_tokens: int = 8192
     temperature: float = 0.7
-    max_task_duration: int = 600  # seconds (default 10 minutes)
+    max_task_duration: int = 900  # seconds (default 15 minutes)
     memory_window: int = 50
 
 

@@ -123,8 +123,8 @@ class SubagentManager:
                 {"role": "user", "content": task},
             ]
             
-            # Run agent loop (time-limited, default 10 minutes)
-            max_task_duration = 600
+            # Run agent loop (time-limited, default 15 minutes)
+            max_task_duration = 900
             iteration = 0
             start_time = time.time()
             final_result: str | None = None
